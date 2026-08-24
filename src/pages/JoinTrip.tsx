@@ -8,8 +8,6 @@ export default function JoinTrip() {
   const { token } = useParams()
   const { session, loading } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
 
@@ -20,17 +18,20 @@ export default function JoinTrip() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session, token])
 
-  async function sendMagicLink() {
+  // No email step (E17 update): joining a shared trip link now signs the
+  // person in anonymously via Supabase Auth — a real auth.uid() with no
+  // email required. RLS policies and GRANTs are unaffected since
+  // anonymous sessions still carry the `authenticated` role.
+  async function joinAnonymously() {
     setError(null)
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.href }
-    })
+    setJoining(true)
+    const { error } = await supabase.auth.signInAnonymously()
     if (error) {
       setError(error.message)
+      setJoining(false)
       return
     }
-    setSent(true)
+    // session becomes truthy → the effect above fires joinTrip()
   }
 
   async function joinTrip() {
@@ -52,23 +53,11 @@ export default function JoinTrip() {
     <div className={styles.page}>
       <div className={styles.card}>
         <p className={styles.brand}>🧭 Hanh's Wanderlog</p>
-        <p className={styles.hint}>sign in to join this trip</p>
-        {sent ? (
-          <p className={styles.hint}>check your email for a login link</p>
-        ) : (
-          <>
-            <input
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-            />
-            <button className={styles.sendButton} onClick={sendMagicLink}>
-              send magic link
-            </button>
-            {error && <p className={styles.error}>{error}</p>}
-          </>
-        )}
+        <p className={styles.hint}>you've been invited to a trip</p>
+        <button className={styles.sendButton} onClick={joinAnonymously}>
+          join trip
+        </button>
+        {error && <p className={styles.error}>{error}</p>}
       </div>
     </div>
   )
