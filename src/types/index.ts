@@ -13,7 +13,7 @@ export interface Pin {
   id: string
   trip_id: string
   name: string
-  category: 'attraction' | 'dining' | 'accommodation' | 'airport' | 'shopping' | 'cafe' | 'bakery'
+  category: 'attraction' | 'dining' | 'accommodation' | 'airport' | 'transport' | 'shopping' | 'cafe' | 'bakery'
   lat: number
   lng: number
   notes: string | null
