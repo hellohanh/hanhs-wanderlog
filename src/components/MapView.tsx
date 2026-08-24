@@ -9,6 +9,13 @@ interface Props {
   tripId: string
 }
 
+interface NominatimResult {
+  display_name: string
+  lat: string
+  lon: string
+  name?: string
+}
+
 // Free public vector tile style — see SKILL.md E6 for the OSM data source
 // decisions (Nominatim/Overpass/OSRM) and Q1 for the open question on
 // handling rate limits as usage grows.
@@ -23,6 +30,10 @@ export default function MapView({ tripId }: Props) {
   const [nearbyEats, setNearbyEats] = useState<{ name: string; lat: number; lng: number }[]>([])
   const [loadingEats, setLoadingEats] = useState(false)
 
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<NominatimResult[]>([])
+  const [searching, setSearching] = useState(false)
+
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
 
@@ -35,28 +46,11 @@ export default function MapView({ tripId }: Props) {
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
+    // Click-to-drop stays available alongside the search flow below.
     map.on('click', async e => {
       const name = window.prompt('name this attraction')
       if (!name) return
-
-      const { data: userData } = await supabase.auth.getUser()
-      const addedBy = userData.user?.id
-
-      const { error } = await supabase.from('pins').insert({
-        trip_id: tripId,
-        name,
-        category: 'attraction',
-        lat: e.lngLat.lat,
-        lng: e.lngLat.lng,
-        added_by: addedBy
-      })
-
-      if (error) {
-        console.error('Failed to add pin', error)
-        return
-      }
-
-      loadPins()
+      await createPin(name, e.lngLat.lat, e.lngLat.lng)
     })
 
     mapRef.current = map
@@ -82,6 +76,65 @@ export default function MapView({ tripId }: Props) {
       return
     }
     setPins(data ?? [])
+  }
+
+  async function createPin(name: string, lat: number, lng: number) {
+    const { data: userData } = await supabase.auth.getUser()
+    const addedBy = userData.user?.id
+
+    const { error } = await supabase.from('pins').insert({
+      trip_id: tripId,
+      name,
+      category: 'attraction',
+      lat,
+      lng,
+      added_by: addedBy
+    })
+
+    if (error) {
+      console.error('Failed to add pin', error)
+      return
+    }
+
+    loadPins()
+
+    const map = mapRef.current
+    if (map) {
+      map.flyTo({ center: [lng, lat], zoom: 14 })
+    }
+  }
+
+  // Uses the free public Nominatim instance per E6. Triggered only on
+  // explicit submit (not per-keystroke) to stay within its usage
+  // policy — see Q1 in SKILL.md for the broader open question on
+  // handling rate limits as usage grows.
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    if (!searchQuery.trim()) return
+
+    setSearching(true)
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5`
+      )
+      const data = await res.json()
+      setSearchResults(data)
+    } catch (err) {
+      console.error('Nominatim search failed', err)
+      setSearchResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  async function addPinFromSearchResult(result: NominatimResult) {
+    const name = result.name || result.display_name.split(',')[0]
+    const lat = parseFloat(result.lat)
+    const lng = parseFloat(result.lon)
+
+    await createPin(name, lat, lng)
+    setSearchResults([])
+    setSearchQuery('')
   }
 
   useEffect(() => {
@@ -154,27 +207,57 @@ export default function MapView({ tripId }: Props) {
   }
 
   return (
-    <div className={styles.wrapper}>
-      <div ref={mapContainer} className={styles.map} />
-      <aside className={styles.sidebar}>
-        {!selectedPin && (
-          <p className={styles.hint}>click the map to drop a pin, or select one to see nearby eats</p>
-        )}
-        {selectedPin && (
-          <>
-            <p className={styles.sidebarTitle}>near {selectedPin.name}</p>
-            {loadingEats && <p className={styles.hint}>looking for restaurants…</p>}
-            {!loadingEats && nearbyEats.length === 0 && (
-              <p className={styles.hint}>no restaurants found nearby</p>
-            )}
-            {nearbyEats.map((eat, i) => (
-              <div key={i} className={styles.eatRow}>
-                <p className={styles.eatName}>{eat.name}</p>
+    <div>
+      <div className={styles.searchBar}>
+        <form className={styles.searchForm} onSubmit={handleSearch}>
+          <input
+            type="text"
+            placeholder="search by name or address"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          <button type="submit" disabled={searching}>
+            {searching ? 'searching…' : 'search'}
+          </button>
+        </form>
+
+        {searchResults.length > 0 && (
+          <div className={styles.searchResults}>
+            {searchResults.map((r, i) => (
+              <div key={i} className={styles.searchResultRow}>
+                <div>
+                  <p className={styles.searchResultName}>{r.name || r.display_name.split(',')[0]}</p>
+                  <p className={styles.searchResultAddress}>{r.display_name}</p>
+                </div>
+                <button onClick={() => addPinFromSearchResult(r)}>add pin</button>
               </div>
             ))}
-          </>
+          </div>
         )}
-      </aside>
+      </div>
+
+      <div className={styles.wrapper}>
+        <div ref={mapContainer} className={styles.map} />
+        <aside className={styles.sidebar}>
+          {!selectedPin && (
+            <p className={styles.hint}>search above, click the map, or select a pin to see nearby eats</p>
+          )}
+          {selectedPin && (
+            <>
+              <p className={styles.sidebarTitle}>near {selectedPin.name}</p>
+              {loadingEats && <p className={styles.hint}>looking for restaurants…</p>}
+              {!loadingEats && nearbyEats.length === 0 && (
+                <p className={styles.hint}>no restaurants found nearby</p>
+              )}
+              {nearbyEats.map((eat, i) => (
+                <div key={i} className={styles.eatRow}>
+                  <p className={styles.eatName}>{eat.name}</p>
+                </div>
+              ))}
+            </>
+          )}
+        </aside>
+      </div>
     </div>
   )
 }

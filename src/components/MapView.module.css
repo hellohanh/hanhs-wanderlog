@@ -1,3 +1,74 @@
+.searchBar {
+  margin-bottom: 10px;
+}
+
+.searchForm {
+  display: flex;
+  gap: 8px;
+}
+
+.searchForm input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+.searchForm button {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-text-on-fill);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.searchResults {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.searchResultRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.searchResultRow:last-child {
+  border-bottom: none;
+}
+
+.searchResultName {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.searchResultAddress {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+}
+
+.searchResultRow button {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .wrapper {
   display: flex;
   height: 480px;

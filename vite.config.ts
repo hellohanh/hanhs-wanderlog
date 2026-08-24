@@ -2,9 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// NOTE: base must match the GitHub repo name once one exists,
-// e.g. '/hanhs-wanderlog/' if the repo is github.com/you/hanhs-wanderlog.
-// Update this before the first deploy — not yet confirmed with the user.
+// GitHub Pages base path — confirmed to match the repo name
+// github.com/<you>/hanhs-wanderlog.
 export default defineConfig({
   base: '/hanhs-wanderlog/',
   plugins: [
