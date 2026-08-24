@@ -119,6 +119,7 @@ export default function MapView({ tripId }: Props) {
 
   useEffect(() => {
     let cancelled = false
+    let cleanupResizeHandlers: (() => void) | undefined
 
     loadGoogleMaps().then(() => {
       if (cancelled || !mapContainer.current || mapRef.current) return
@@ -146,10 +147,32 @@ export default function MapView({ tripId }: Props) {
 
       mapRef.current = map
       setMapReady(true)
+
+      // Safety net: on mobile the map's container is sized via CSS that
+      // resolves after the initial paint (and can change again on
+      // rotation), and google.maps.Map sometimes caches a stale/zero
+      // size from the moment it was constructed. A resize event tells
+      // it to re-measure its container and redraw — cheap and harmless
+      // to call an extra time on desktop too.
+      const triggerResize = () => {
+        google.maps.event.trigger(map, 'resize')
+      }
+      window.addEventListener('resize', triggerResize)
+      window.addEventListener('orientationchange', triggerResize)
+      // Also fire once shortly after mount, in case layout was still
+      // settling when the map was first constructed.
+      const settleTimeout = setTimeout(triggerResize, 300)
+
+      cleanupResizeHandlers = () => {
+        window.removeEventListener('resize', triggerResize)
+        window.removeEventListener('orientationchange', triggerResize)
+        clearTimeout(settleTimeout)
+      }
     })
 
     return () => {
       cancelled = true
+      cleanupResizeHandlers?.()
     }
   }, [tripId])
 
