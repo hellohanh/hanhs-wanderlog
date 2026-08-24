@@ -115,6 +115,7 @@ export default function MapView({ tripId }: Props) {
   const [searching, setSearching] = useState(false)
 
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
+  const mapId = import.meta.env.VITE_GOOGLE_MAP_ID as string
 
   useEffect(() => {
     let cancelled = false
@@ -125,6 +126,9 @@ export default function MapView({ tripId }: Props) {
       const map = new google.maps.Map(mapContainer.current, {
         center: { lat: 20, lng: 0 },
         zoom: 2,
+        tilt: 0,
+        heading: 0,
+        mapId,
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false
@@ -192,6 +196,20 @@ export default function MapView({ tripId }: Props) {
       map.panTo({ lat, lng })
       map.setZoom(14)
     }
+  }
+
+  function adjustTilt(amount: number) {
+    const map = mapRef.current
+    if (!map) return
+    const current = map.getTilt() ?? 0
+    map.setTilt(Math.max(0, Math.min(67.5, current + amount)))
+  }
+
+  function adjustHeading(amount: number) {
+    const map = mapRef.current
+    if (!map) return
+    const current = map.getHeading() ?? 0
+    map.setHeading((current + amount + 360) % 360)
   }
 
   async function confirmDraftPin() {
@@ -361,7 +379,25 @@ export default function MapView({ tripId }: Props) {
       </div>
 
       <div className={styles.wrapper}>
-        <div ref={mapContainer} className={styles.map} />
+        <div className={styles.mapPane}>
+          <div ref={mapContainer} className={styles.map} />
+          {mapReady && (
+            <div className={styles.tiltControls}>
+              <button type="button" title="Tilt up" onClick={() => adjustTilt(10)}>
+                ⤒
+              </button>
+              <button type="button" title="Tilt down" onClick={() => adjustTilt(-10)}>
+                ⤓
+              </button>
+              <button type="button" title="Rotate left" onClick={() => adjustHeading(-20)}>
+                ⟲
+              </button>
+              <button type="button" title="Rotate right" onClick={() => adjustHeading(20)}>
+                ⟳
+              </button>
+            </div>
+          )}
+        </div>
         <aside className={styles.sidebar}>
           {draftPin && (
             <>
