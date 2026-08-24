@@ -3,6 +3,14 @@
 -- and shareable invite links (E17 in SKILL.md).
 -- Itinerary/budget/packing tables are not included yet — those tabs
 -- are still placeholders in the UI (see README.md What's Built).
+--
+-- Safe to re-run: drops existing objects first so a partial or repeat
+-- run doesn't fail with "relation already exists".
+
+drop function if exists join_trip_via_invite(uuid);
+drop table if exists trip_members cascade;
+drop table if exists pins cascade;
+drop table if exists trips cascade;
 
 create table trips (
   id uuid primary key default gen_random_uuid(),
@@ -36,6 +44,16 @@ create table trip_members (
 alter table trips enable row level security;
 alter table pins enable row level security;
 alter table trip_members enable row level security;
+
+-- Row Level Security policies (below) control WHICH rows a role can
+-- see or touch, but Postgres separately requires base GRANT
+-- privileges on the table itself before RLS is even evaluated.
+-- Creating tables via the SQL Editor does not set these
+-- automatically the way the Supabase dashboard's table UI does.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on trips to authenticated;
+grant select, insert on pins to authenticated;
+grant select on trip_members to authenticated;
 
 -- Per E5 (SKILL.md): every invited member gets full edit rights,
 -- no owner/contributor permission tiers.
