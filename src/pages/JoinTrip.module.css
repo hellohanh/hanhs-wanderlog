@@ -4,10 +4,11 @@
   align-items: center;
   justify-content: center;
   background: var(--surface-0);
+  padding: 20px;
 }
 
 .card {
-  width: 280px;
+  width: min(280px, 100%);
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 12px;

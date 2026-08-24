@@ -346,6 +346,13 @@ export default function MapView({ tripId }: Props) {
     }
   }
 
+  const sidebarOpen = draftPin !== null || selectedPin !== null
+
+  function closeSidebar() {
+    setDraftPin(null)
+    setSelectedPin(null)
+  }
+
   return (
     <div>
       <div className={styles.searchBar}>
@@ -398,7 +405,25 @@ export default function MapView({ tripId }: Props) {
             </div>
           )}
         </div>
-        <aside className={styles.sidebar}>
+
+        {/* On mobile this becomes a slide-up bottom sheet (see .sidebar
+            media query) — hidden until a pin is tapped or a new one
+            dropped, controlled via .sidebarOpen. On desktop it's the
+            always-visible side panel, unchanged. */}
+        <div
+          className={styles.sidebarBackdrop}
+          data-open={sidebarOpen}
+          onClick={closeSidebar}
+        />
+        <aside className={styles.sidebar} data-open={sidebarOpen}>
+          <button
+            type="button"
+            className={styles.sidebarClose}
+            onClick={closeSidebar}
+            aria-label="close"
+          >
+            ×
+          </button>
           {draftPin && (
             <>
               <p className={styles.sidebarTitle}>new pin</p>

@@ -143,3 +143,41 @@
   color: var(--text-muted);
   font-size: 13px;
 }
+
+@media (max-width: 640px) {
+  .page {
+    padding: 12px;
+  }
+
+  .header {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .headerActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .newTripButton {
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  .signOutButton {
+    padding: 10px 14px;
+  }
+
+  .newTripForm input {
+    min-width: 100%;
+  }
+
+  .formActions button {
+    padding: 10px 14px;
+    flex: 1;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+}

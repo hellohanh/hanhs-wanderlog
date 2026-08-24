@@ -69,6 +69,7 @@
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 16px;
@@ -98,4 +99,51 @@
   font-size: 14px;
   padding: 40px 0;
   text-align: center;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 12px;
+  }
+
+  .header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .headerRight {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .tripName {
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60vw;
+  }
+
+  .shareButton {
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .shareBox {
+    flex-wrap: wrap;
+  }
+
+  .shareBox input {
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .shareBox button {
+    padding: 8px 14px;
+  }
+
+  .tab {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
 }
