@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hanh's Wanderlog</title>
+    <script>
+      // GitHub Pages only serves real files — a direct/fresh visit to a
+      // client-side route like /hanhs-wanderlog/join/<token> (e.g. from
+      // someone clicking a shared invite link) has no matching file, so
+      // GitHub serves this 404.html instead. This redirects to the real
+      // index.html, packing the originally-requested path into a query
+      // string so index.html's matching script (see below) can hand it
+      // back to React Router once the app loads. This is only needed for
+      // a fresh page load from outside the app — in-app navigation
+      // (clicking links while the app is already open) is handled
+      // normally by React Router and never hits this file.
+      //
+      // pathSegmentsToKeep = 1, matching this project's GitHub Pages
+      // base path of /hanhs-wanderlog/ (see vite.config.ts).
+      var pathSegmentsToKeep = 1;
+      var loc = window.location;
+      var segments = loc.pathname.split('/');
+      var basePath = segments.slice(0, 1 + pathSegmentsToKeep).join('/');
+      var deepPath = segments.slice(1 + pathSegmentsToKeep).join('/');
+
+      loc.replace(
+        basePath +
+          '/?redirect=' +
+          encodeURIComponent(deepPath) +
+          (loc.search ? '&' + loc.search.slice(1) : '') +
+          loc.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>

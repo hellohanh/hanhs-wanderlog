@@ -6,6 +6,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#FF9900" />
     <title>Hanh's Wanderlog</title>
+    <script>
+      // Companion to public/404.html — restores the real path (packed
+      // into ?redirect=...) that a fresh deep-link visit (e.g. an invite
+      // link) got redirected through, BEFORE React Router mounts and
+      // reads the URL. Runs on every load but is a no-op unless the
+      // ?redirect param is actually present.
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var redirect = params.get('redirect');
+        if (redirect === null) return;
+
+        params.delete('redirect');
+        var restoredPath =
+          window.location.pathname.replace(/\/$/, '') +
+          '/' +
+          redirect +
+          (params.toString() ? '?' + params.toString() : '') +
+          window.location.hash;
+
+        window.history.replaceState(null, '', restoredPath);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
