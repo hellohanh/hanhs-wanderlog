@@ -4,8 +4,14 @@
 -- Itinerary/budget/packing tables are not included yet — those tabs
 -- are still placeholders in the UI (see README.md What's Built).
 --
--- Safe to re-run: drops existing objects first so a partial or repeat
--- run doesn't fail with "relation already exists".
+-- WARNING — DO NOT RE-RUN THIS FULL FILE ONCE REAL DATA EXISTS.
+-- The drop statements below make this script error-free to re-run, but
+-- they DELETE ALL ROWS in trips/pins/trip_members every time — that is
+-- NOT the same as being safe. This file is kept as the canonical
+-- reference for the schema's current shape, not as a repeatable script.
+-- Any future change to an existing live database must be a small,
+-- targeted, non-destructive migration (alter table ... add/drop
+-- constraint, add column, etc.) instead.
 
 drop function if exists join_trip_via_invite(uuid);
 drop table if exists trip_members cascade;

@@ -71,7 +71,7 @@
 
 .wrapper {
   display: flex;
-  height: 480px;
+  min-height: 600px;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
