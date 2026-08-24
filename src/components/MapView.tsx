@@ -16,6 +16,31 @@ interface NominatimResult {
   name?: string
 }
 
+type PinCategory = Pin['category']
+
+interface DraftPin {
+  lat: number
+  lng: number
+  name: string
+  category: PinCategory
+}
+
+// Icon + color per category, used for both the marker badges on the map
+// and the category picker in the "add pin" form.
+const CATEGORIES: { key: PinCategory; label: string; emoji: string; color: string }[] = [
+  { key: 'attraction', label: 'Attraction', emoji: '📍', color: '#FF9900' },
+  { key: 'dining', label: 'Dining', emoji: '🍴', color: '#D85A30' },
+  { key: 'cafe', label: 'Cafe', emoji: '☕', color: '#BA7517' },
+  { key: 'bakery', label: 'Bakery/Dessert', emoji: '🧁', color: '#D4537E' },
+  { key: 'accommodation', label: 'Accommodation', emoji: '🛏️', color: '#378ADD' },
+  { key: 'airport', label: 'Airport/Transport', emoji: '✈️', color: '#7F77DD' },
+  { key: 'shopping', label: 'Shopping', emoji: '🛍️', color: '#639922' }
+]
+
+function categoryConfig(category: PinCategory) {
+  return CATEGORIES.find(c => c.key === category) ?? CATEGORIES[0]
+}
+
 // Free public vector tile style — see SKILL.md E6 for the OSM data source
 // decisions (Nominatim/Overpass/OSRM) and Q1 for the open question on
 // handling rate limits as usage grows.
@@ -27,6 +52,7 @@ export default function MapView({ tripId }: Props) {
   const markersRef = useRef<Marker[]>([])
   const [pins, setPins] = useState<Pin[]>([])
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null)
+  const [draftPin, setDraftPin] = useState<DraftPin | null>(null)
   const [nearbyEats, setNearbyEats] = useState<{ name: string; lat: number; lng: number }[]>([])
   const [loadingEats, setLoadingEats] = useState(false)
 
@@ -46,11 +72,11 @@ export default function MapView({ tripId }: Props) {
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
-    // Click-to-drop stays available alongside the search flow below.
-    map.on('click', async e => {
-      const name = window.prompt('name this attraction')
-      if (!name) return
-      await createPin(name, e.lngLat.lat, e.lngLat.lng)
+    // Clicking the map opens the draft form instead of saving right
+    // away — this is where name + category both get set.
+    map.on('click', e => {
+      setSelectedPin(null)
+      setDraftPin({ lat: e.lngLat.lat, lng: e.lngLat.lng, name: '', category: 'attraction' })
     })
 
     mapRef.current = map
@@ -78,14 +104,14 @@ export default function MapView({ tripId }: Props) {
     setPins(data ?? [])
   }
 
-  async function createPin(name: string, lat: number, lng: number) {
+  async function createPin(name: string, lat: number, lng: number, category: PinCategory) {
     const { data: userData } = await supabase.auth.getUser()
     const addedBy = userData.user?.id
 
     const { error } = await supabase.from('pins').insert({
       trip_id: tripId,
       name,
-      category: 'attraction',
+      category,
       lat,
       lng,
       added_by: addedBy
@@ -104,10 +130,18 @@ export default function MapView({ tripId }: Props) {
     }
   }
 
+  async function confirmDraftPin() {
+    if (!draftPin || !draftPin.name.trim()) return
+    await createPin(draftPin.name.trim(), draftPin.lat, draftPin.lng, draftPin.category)
+    setDraftPin(null)
+  }
+
   // Uses the free public Nominatim instance per E6. Triggered only on
   // explicit submit (not per-keystroke) to stay within its usage
   // policy — see Q1 in SKILL.md for the broader open question on
-  // handling rate limits as usage grows.
+  // handling rate limits as usage grows. Note: Nominatim is a
+  // place-name/address geocoder, not an airport-code database — search
+  // by name (e.g. "Tan Son Nhat International Airport"), not by code.
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     if (!searchQuery.trim()) return
@@ -127,12 +161,15 @@ export default function MapView({ tripId }: Props) {
     }
   }
 
-  async function addPinFromSearchResult(result: NominatimResult) {
+  function startDraftFromSearchResult(result: NominatimResult) {
     const name = result.name || result.display_name.split(',')[0]
-    const lat = parseFloat(result.lat)
-    const lng = parseFloat(result.lon)
-
-    await createPin(name, lat, lng)
+    setSelectedPin(null)
+    setDraftPin({
+      lat: parseFloat(result.lat),
+      lng: parseFloat(result.lon),
+      name,
+      category: 'attraction'
+    })
     setSearchResults([])
     setSearchQuery('')
   }
@@ -145,9 +182,12 @@ export default function MapView({ tripId }: Props) {
     markersRef.current = []
 
     pins.forEach(pin => {
+      const cfg = categoryConfig(pin.category)
       const el = document.createElement('div')
       el.className = styles.pinMarker
-      el.textContent = pin.category === 'attraction' ? '📍' : '🍴'
+      el.style.backgroundColor = cfg.color
+      el.title = `${cfg.label}: ${pin.name}`
+      el.textContent = cfg.emoji
 
       const marker = new maplibregl.Marker({ element: el })
         .setLngLat([pin.lng, pin.lat])
@@ -155,6 +195,7 @@ export default function MapView({ tripId }: Props) {
 
       el.addEventListener('click', evt => {
         evt.stopPropagation()
+        setDraftPin(null)
         setSelectedPin(pin)
       })
 
@@ -212,7 +253,7 @@ export default function MapView({ tripId }: Props) {
         <form className={styles.searchForm} onSubmit={handleSearch}>
           <input
             type="text"
-            placeholder="search by name or address"
+            placeholder="search by name or address (not airport codes)"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
@@ -229,7 +270,7 @@ export default function MapView({ tripId }: Props) {
                   <p className={styles.searchResultName}>{r.name || r.display_name.split(',')[0]}</p>
                   <p className={styles.searchResultAddress}>{r.display_name}</p>
                 </div>
-                <button onClick={() => addPinFromSearchResult(r)}>add pin</button>
+                <button onClick={() => startDraftFromSearchResult(r)}>add pin</button>
               </div>
             ))}
           </div>
@@ -239,10 +280,54 @@ export default function MapView({ tripId }: Props) {
       <div className={styles.wrapper}>
         <div ref={mapContainer} className={styles.map} />
         <aside className={styles.sidebar}>
-          {!selectedPin && (
+          {draftPin && (
+            <>
+              <p className={styles.sidebarTitle}>new pin</p>
+              <input
+                className={styles.draftNameInput}
+                placeholder="name"
+                value={draftPin.name}
+                onChange={e => setDraftPin({ ...draftPin, name: e.target.value })}
+                autoFocus
+              />
+              <div className={styles.categoryPicker}>
+                {CATEGORIES.map(cat => (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    className={styles.categoryPill}
+                    style={
+                      draftPin.category === cat.key
+                        ? { borderColor: cat.color, color: cat.color, fontWeight: 500 }
+                        : undefined
+                    }
+                    onClick={() => setDraftPin({ ...draftPin, category: cat.key })}
+                  >
+                    <span className={styles.categoryDot} style={{ backgroundColor: cat.color }} />
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.draftActions}>
+                <button
+                  className={styles.draftConfirm}
+                  onClick={confirmDraftPin}
+                  disabled={!draftPin.name.trim()}
+                >
+                  add pin
+                </button>
+                <button className={styles.draftCancel} onClick={() => setDraftPin(null)}>
+                  cancel
+                </button>
+              </div>
+            </>
+          )}
+
+          {!draftPin && !selectedPin && (
             <p className={styles.hint}>search above, click the map, or select a pin to see nearby eats</p>
           )}
-          {selectedPin && (
+
+          {!draftPin && selectedPin && (
             <>
               <p className={styles.sidebarTitle}>near {selectedPin.name}</p>
               {loadingEats && <p className={styles.hint}>looking for restaurants…</p>}

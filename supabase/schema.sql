@@ -27,7 +27,9 @@ create table pins (
   id uuid primary key default gen_random_uuid(),
   trip_id uuid references trips(id) on delete cascade,
   name text not null,
-  category text not null default 'attraction',
+  category text not null default 'attraction' check (
+    category in ('attraction', 'dining', 'accommodation', 'airport', 'shopping', 'cafe', 'bakery')
+  ),
   lat double precision not null,
   lng double precision not null,
   notes text,
