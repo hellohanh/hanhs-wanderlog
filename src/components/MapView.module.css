@@ -1,0 +1,45 @@
+.wrapper {
+  display: flex;
+  height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.map {
+  flex: 1;
+}
+
+.sidebar {
+  width: 240px;
+  border-left: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--surface-1);
+}
+
+.sidebarTitle {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0 0 10px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.eatRow {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+
+.eatName {
+  font-size: 13px;
+  margin: 0;
+}
+
+.pinMarker {
+  font-size: 22px;
+  cursor: pointer;
+}
