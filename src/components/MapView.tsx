@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import maplibregl, { Map as MLMap, Marker } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { supabase } from '../lib/supabaseClient'
+import { loadGoogleMaps } from '../lib/googleMapsLoader'
 import type { Pin } from '../types'
 import styles from './MapView.module.css'
 
@@ -9,11 +8,10 @@ interface Props {
   tripId: string
 }
 
-interface NominatimResult {
-  display_name: string
-  lat: string
-  lon: string
-  name?: string
+interface GooglePlaceResult {
+  displayName?: { text: string }
+  formattedAddress?: string
+  location?: { latitude: number; longitude: number }
 }
 
 type PinCategory = Pin['category']
@@ -27,8 +25,8 @@ interface DraftPin {
 
 // Small hand-built line icons (24x24 viewBox, white stroke/fill) — used
 // inside the colored circle on each map pin. Kept as inline SVG rather
-// than an icon-font dependency so the marker HTML (built imperatively
-// for MapLibre, not through React) has no external font/CDN to load.
+// than an icon-font dependency, so the marker HTML (built imperatively,
+// same as before) has no external font/CDN to load.
 const ICON_SVGS: Record<PinCategory, string> = {
   attraction: `<svg width="18" height="18" viewBox="0 0 24 24"><polygon points="12,2 14.9,8.6 22,9.3 16.5,14 18.2,21 12,17.3 5.8,21 7.5,14 2,9.3 9.1,8.6" fill="white"/></svg>`,
   dining: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="3" x2="7" y2="10"/><line x1="5" y1="3" x2="5" y2="8"/><line x1="9" y1="3" x2="9" y2="8"/><line x1="7" y1="10" x2="7" y2="21"/><line x1="17" y1="3" x2="17" y2="21"/><path d="M15 3c0 4 2 4 2 8"/></svg>`,
@@ -57,15 +55,55 @@ function categoryConfig(category: PinCategory) {
   return CATEGORIES.find(c => c.key === category) ?? CATEGORIES[0]
 }
 
-// Free public vector tile style — see SKILL.md E6 for the OSM data source
-// decisions (Nominatim/Overpass/OSRM) and Q1 for the open question on
-// handling rate limits as usage grows.
-const OSM_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
+// Custom map-pin overlay: attaches a plain HTML element (the same
+// nested white-teardrop / colored-circle / icon structure used before)
+// to the map at a lat/lng, via Google's OverlayView API. This is what
+// lets the exact approved pin design carry over unchanged from the
+// previous MapLibre implementation, instead of flattening it into a
+// static marker image. Built lazily since `google.maps.OverlayView`
+// only exists once the Maps JS API script has finished loading.
+let PinOverlayClass: (new (position: google.maps.LatLng, el: HTMLElement) => google.maps.OverlayView) | null =
+  null
+
+function getPinOverlayClass() {
+  if (!PinOverlayClass) {
+    class PinOverlay extends google.maps.OverlayView {
+      private el: HTMLElement
+      private position: google.maps.LatLng
+
+      constructor(position: google.maps.LatLng, el: HTMLElement) {
+        super()
+        this.position = position
+        this.el = el
+      }
+
+      onAdd() {
+        this.getPanes()?.overlayMouseTarget.appendChild(this.el)
+      }
+
+      draw() {
+        const point = this.getProjection()?.fromLatLngToDivPixel(this.position)
+        if (point) {
+          this.el.style.position = 'absolute'
+          this.el.style.left = `${point.x - 22}px`
+          this.el.style.top = `${point.y - 44}px`
+        }
+      }
+
+      onRemove() {
+        this.el.remove()
+      }
+    }
+    PinOverlayClass = PinOverlay
+  }
+  return PinOverlayClass
+}
 
 export default function MapView({ tripId }: Props) {
   const mapContainer = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<MLMap | null>(null)
-  const markersRef = useRef<Marker[]>([])
+  const mapRef = useRef<google.maps.Map | null>(null)
+  const overlaysRef = useRef<google.maps.OverlayView[]>([])
+  const [mapReady, setMapReady] = useState(false)
   const [pins, setPins] = useState<Pin[]>([])
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null)
   const [draftPin, setDraftPin] = useState<DraftPin | null>(null)
@@ -73,32 +111,41 @@ export default function MapView({ tripId }: Props) {
   const [loadingEats, setLoadingEats] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<NominatimResult[]>([])
+  const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>([])
   const [searching, setSearching] = useState(false)
 
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
+
   useEffect(() => {
-    if (!mapContainer.current || mapRef.current) return
+    let cancelled = false
 
-    const map = new maplibregl.Map({
-      container: mapContainer.current,
-      style: OSM_STYLE,
-      center: [0, 20],
-      zoom: 2
+    loadGoogleMaps().then(() => {
+      if (cancelled || !mapContainer.current || mapRef.current) return
+
+      const map = new google.maps.Map(mapContainer.current, {
+        center: { lat: 20, lng: 0 },
+        zoom: 2,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false
+      })
+
+      // Clicking the map opens the draft form instead of saving right
+      // away — this is where name + category both get set.
+      map.addListener('click', (e: google.maps.MapMouseEvent) => {
+        const lat = e.latLng?.lat()
+        const lng = e.latLng?.lng()
+        if (lat == null || lng == null) return
+        setSelectedPin(null)
+        setDraftPin({ lat, lng, name: '', category: 'attraction' })
+      })
+
+      mapRef.current = map
+      setMapReady(true)
     })
 
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-
-    // Clicking the map opens the draft form instead of saving right
-    // away — this is where name + category both get set.
-    map.on('click', e => {
-      setSelectedPin(null)
-      setDraftPin({ lat: e.lngLat.lat, lng: e.lngLat.lng, name: '', category: 'attraction' })
-    })
-
-    mapRef.current = map
     return () => {
-      map.remove()
-      mapRef.current = null
+      cancelled = true
     }
   }, [tripId])
 
@@ -142,7 +189,8 @@ export default function MapView({ tripId }: Props) {
 
     const map = mapRef.current
     if (map) {
-      map.flyTo({ center: [lng, lat], zoom: 14 })
+      map.panTo({ lat, lng })
+      map.setZoom(14)
     }
   }
 
@@ -152,37 +200,41 @@ export default function MapView({ tripId }: Props) {
     setDraftPin(null)
   }
 
-  // Uses the free public Nominatim instance per E6. Triggered only on
-  // explicit submit (not per-keystroke) to stay within its usage
-  // policy — see Q1 in SKILL.md for the broader open question on
-  // handling rate limits as usage grows. Note: Nominatim is a
-  // place-name/address geocoder, not an airport-code database — search
-  // by name (e.g. "Tan Son Nhat International Airport"), not by code.
+  // Uses Places API (New) — Text Search, per E26. Triggered only on
+  // explicit submit (not per-keystroke), consistent with the same
+  // usage-conscious pattern used for the previous OSM-based search.
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     if (!searchQuery.trim()) return
 
     setSearching(true)
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5`
-      )
+      const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location'
+        },
+        body: JSON.stringify({ textQuery: searchQuery })
+      })
       const data = await res.json()
-      setSearchResults(data)
+      setSearchResults(data.places ?? [])
     } catch (err) {
-      console.error('Nominatim search failed', err)
+      console.error('Places search failed', err)
       setSearchResults([])
     } finally {
       setSearching(false)
     }
   }
 
-  function startDraftFromSearchResult(result: NominatimResult) {
-    const name = result.name || result.display_name.split(',')[0]
+  function startDraftFromSearchResult(result: GooglePlaceResult) {
+    if (!result.location) return
+    const name = result.displayName?.text || result.formattedAddress?.split(',')[0] || 'unnamed place'
     setSelectedPin(null)
     setDraftPin({
-      lat: parseFloat(result.lat),
-      lng: parseFloat(result.lon),
+      lat: result.location.latitude,
+      lng: result.location.longitude,
       name,
       category: 'attraction'
     })
@@ -192,17 +244,16 @@ export default function MapView({ tripId }: Props) {
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
+    if (!map || !mapReady) return
 
-    markersRef.current.forEach(m => m.remove())
-    markersRef.current = []
+    overlaysRef.current.forEach(o => o.setMap(null))
+    overlaysRef.current = []
+
+    const PinOverlayCls = getPinOverlayClass()
 
     pins.forEach(pin => {
       const cfg = categoryConfig(pin.category)
 
-      // Teardrop pin: white outer shape (CSS-only, rotated square trick),
-      // a solid colored circle inset in the bulb, and a white icon inside
-      // that circle, counter-rotated back upright.
       const el = document.createElement('div')
       el.className = styles.pinMarker
       el.title = `${cfg.label}: ${pin.name}`
@@ -214,24 +265,23 @@ export default function MapView({ tripId }: Props) {
         </span>
       `
 
-      const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-        .setLngLat([pin.lng, pin.lat])
-        .addTo(map)
-
       el.addEventListener('click', evt => {
         evt.stopPropagation()
         setDraftPin(null)
         setSelectedPin(pin)
       })
 
-      markersRef.current.push(marker)
+      const overlay = new PinOverlayCls(new google.maps.LatLng(pin.lat, pin.lng), el)
+      overlay.setMap(map)
+      overlaysRef.current.push(overlay)
     })
 
     if (pins.length > 0) {
       const first = pins[0]
-      map.flyTo({ center: [first.lng, first.lat], zoom: 12 })
+      map.panTo({ lat: first.lat, lng: first.lng })
+      map.setZoom(12)
     }
-  }, [pins])
+  }, [pins, mapReady])
 
   useEffect(() => {
     if (!selectedPin) {
@@ -241,31 +291,37 @@ export default function MapView({ tripId }: Props) {
     loadNearbyEats(selectedPin)
   }, [selectedPin])
 
-  // Uses the free public Overpass API instance per E6. Q1 (open in
-  // SKILL.md) tracks how to handle rate limits if usage ever grows
-  // beyond light personal/family use.
+  // Uses Places API (New) — Nearby Search, per E26.
   async function loadNearbyEats(pin: Pin) {
     setLoadingEats(true)
-    const radius = 600
-    const query = `
-      [out:json][timeout:15];
-      node["amenity"="restaurant"](around:${radius},${pin.lat},${pin.lng});
-      out body 8;
-    `
     try {
-      const res = await fetch('https://overpass-api.de/api/interpreter', {
+      const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
         method: 'POST',
-        body: query
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': 'places.displayName,places.location'
+        },
+        body: JSON.stringify({
+          includedTypes: ['restaurant'],
+          maxResultCount: 8,
+          locationRestriction: {
+            circle: {
+              center: { latitude: pin.lat, longitude: pin.lng },
+              radius: 600
+            }
+          }
+        })
       })
-      const json = await res.json()
-      const results = (json.elements ?? []).map((el: any) => ({
-        name: el.tags?.name ?? 'unnamed restaurant',
-        lat: el.lat,
-        lng: el.lon
+      const data = await res.json()
+      const results = (data.places ?? []).map((p: any) => ({
+        name: p.displayName?.text ?? 'unnamed restaurant',
+        lat: p.location?.latitude,
+        lng: p.location?.longitude
       }))
       setNearbyEats(results)
     } catch (err) {
-      console.error('Overpass lookup failed', err)
+      console.error('Places nearby search failed', err)
       setNearbyEats([])
     } finally {
       setLoadingEats(false)
@@ -278,7 +334,7 @@ export default function MapView({ tripId }: Props) {
         <form className={styles.searchForm} onSubmit={handleSearch}>
           <input
             type="text"
-            placeholder="search by name or address (not airport codes)"
+            placeholder="search by name or address"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
@@ -292,8 +348,10 @@ export default function MapView({ tripId }: Props) {
             {searchResults.map((r, i) => (
               <div key={i} className={styles.searchResultRow}>
                 <div>
-                  <p className={styles.searchResultName}>{r.name || r.display_name.split(',')[0]}</p>
-                  <p className={styles.searchResultAddress}>{r.display_name}</p>
+                  <p className={styles.searchResultName}>
+                    {r.displayName?.text || r.formattedAddress?.split(',')[0]}
+                  </p>
+                  <p className={styles.searchResultAddress}>{r.formattedAddress}</p>
                 </div>
                 <button onClick={() => startDraftFromSearchResult(r)}>add pin</button>
               </div>
