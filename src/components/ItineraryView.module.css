@@ -41,6 +41,32 @@
   opacity: 0.8;
 }
 
+.dayTabDelete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dayTabDelete:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-primary);
+}
+
+.deleteWarning {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 14px;
+  max-width: 320px;
+}
+
 .addDayButton {
   flex-shrink: 0;
   border: 1px dashed var(--border-strong);
@@ -138,7 +164,7 @@
 }
 
 .travelCardRoute {
-  font-size: 14px;
+  font-size: 20px;
   font-weight: 600;
   margin: 0 0 3px;
   overflow: hidden;
@@ -151,7 +177,7 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: #1B2A4A;
   margin-bottom: 8px;
 }
 
@@ -173,7 +199,7 @@
 .travelCardLocation {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: rgba(0, 0, 0, 0.75);
   letter-spacing: 0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -188,14 +214,14 @@
 }
 
 .travelCardDividerDots {
-  color: var(--text-primary);
+  color: rgba(0, 0, 0, 0.75);
   font-size: 12px;
   line-height: 1;
   letter-spacing: 1px;
 }
 
 .travelCardDividerPlane {
-  color: #7A0C2E;
+  color: rgba(0, 0, 0, 0.75);
   font-size: 17px;
   line-height: 1;
   margin: 0 3px;
@@ -211,11 +237,12 @@
 
 .travelCardTimeValue {
   font-weight: 500;
+  color: rgba(0, 0, 0, 0.75);
 }
 
 .travelCardTz {
   font-size: 10px;
-  color: var(--text-muted);
+  color: rgba(0, 0, 0, 0.75);
   margin-left: 2px;
 }
 
@@ -251,22 +278,39 @@
   color: var(--accent);
 }
 
-/* ---- Main split: timeline + pinned column ---- */
+/* ---- Main layout: 40% left (travel cards + pinned pool), 60% right
+   (timeline). grid-template-areas so mobile can reorder to
+   travel/timeline/pool independently of the desktop column grouping —
+   see the media query at the bottom of this file. ---- */
 
 .dayContent {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-columns: 40% 1fr;
+  grid-template-areas:
+    'travel timeline'
+    'pool timeline';
+  align-items: start;
   gap: 16px;
 }
 
+.travelArea {
+  grid-area: travel;
+  min-width: 0;
+}
+
 .timelineWrapper {
+  grid-area: timeline;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
 }
 
 .timelineScroll {
-  max-height: 640px;
+  /* 1080px = 18 hours at 60px/hour — matches the 06:00–00:00 (midnight)
+     default window (see SCROLL_TO_HOUR in ItineraryView.tsx): scrolled
+     to the top of hour 6, this exactly fills the viewport through the
+     end of the day with no partial hour cut off at the bottom. */
+  max-height: 1080px;
   overflow-y: auto;
   position: relative;
 }
@@ -325,12 +369,6 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
-.timelineBlockIcon {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-
 .timelineBlockName {
   font-weight: 500;
   overflow: hidden;
@@ -348,21 +386,64 @@
 
 .timelineBlockContinues {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 4px;
+  left: 12px;
+  right: 12px;
+  bottom: 6px;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-muted);
   text-align: right;
 }
 
 .timelineBlockContinuedFrom {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 4px;
+  left: 12px;
+  right: 40px;
+  top: 8px;
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-muted);
+}
+
+.timelineLegCard {
+  position: absolute;
+  left: 60px;
+  right: 8px;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  /* Steel gradient: 40% opacity at the very bottom, ramping down to
+     0% (fully transparent) by the point 25% down from the top of the
+     block — in "to top" gradient terms that's the 75% stop (0% =
+     bottom, 100% = top), so it reaches full transparency before the
+     top 25% of the card rather than exactly at the top edge. That top
+     quarter then stays fully transparent up to the edge. */
+  background: linear-gradient(to top, rgba(92, 122, 153, 0.4) 0%, transparent 75%), var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 4px solid transparent; /* color set inline per leg's mode */
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+/* Duration block top-aligned to match the title's top edge, specific
+   to the timeline's version of the card — the card-list version
+   (.travelCardFull) keeps its vertically-centered duration. */
+.timelineLegCard .travelCardDuration {
+  justify-content: flex-start;
+}
+
+/* Title reads a bit large at the card list's 20px once it's inside
+   the tighter timeline block. */
+.timelineLegCard .travelCardRoute {
+  font-size: 17px;
+}
+
+/* The "continued from" label is absolutely positioned (see
+   .timelineBlockContinuedFrom) rather than in normal flow, so on its
+   own it sits on top of the title instead of pushing it down — this
+   pushes the actual card content down 30px to make room for it. */
+.timelineContinuationCard {
+  padding-top: 40px;
 }
 
 .dragPreviewBlock {
@@ -374,9 +455,10 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
-/* ---- Pinned column (right) ---- */
+/* ---- Pinned pool (left column, below travel cards) ---- */
 
 .poolColumn {
+  grid-area: pool;
   min-width: 0;
 }
 
@@ -622,17 +704,6 @@
   background: var(--accent-tint);
 }
 
-.autocompleteHint {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.travelFormHint {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: -2px 0 0;
-}
-
 .travelFormTimeInput {
   flex-shrink: 0;
   width: 110px;
@@ -737,7 +808,8 @@
 }
 
 .miniMap {
-  min-height: 300px;
+  height: 300px;
+  flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -767,6 +839,10 @@
 @media (max-width: 768px) {
   .dayContent {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'travel'
+      'timeline'
+      'pool';
   }
 
   .travelCardEditButton {

@@ -113,6 +113,82 @@
   background: var(--surface-2);
 }
 
+.districtsToggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.districtsToggle[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent-text-on-light);
+  font-weight: 500;
+}
+
+.districtPill {
+  background: #7A0C2E;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.hoverTooltip {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, calc(-100% - 10px));
+  min-width: 160px;
+  max-width: 240px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  pointer-events: auto;
+}
+
+.hoverTooltip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--surface-1);
+}
+
+.hoverTooltipName {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.hoverTooltipDetail {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.hoverTooltipHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
 .sidebar {
   width: 240px;
   border-left: 1px solid var(--border);
@@ -354,11 +430,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 25px;
-  height: 25px;
+  width: 33px;
+  height: 33px;
   background: #fff;
   border-radius: 50% 50% 50% 0;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 1.5px solid #000;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   transform: rotate(-45deg);
 }
@@ -367,8 +443,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 23px;
+  height: 23px;
   border-radius: 50%;
 }
 

@@ -149,6 +149,14 @@ create policy "authenticated users can create trips"
   on trips for insert
   with check (owner_id = auth.uid());
 
+-- Owner-only, unlike every other permission in this app (E5 gives
+-- invited members full edit rights elsewhere) — deleting a trip
+-- cascades everything (pins, days, stops, legs, membership) with no
+-- undo. Added in migration 011.
+create policy "trip owner can delete trips"
+  on trips for delete
+  using (owner_id = auth.uid());
+
 create policy "trip members can view pins"
   on pins for select
   using (

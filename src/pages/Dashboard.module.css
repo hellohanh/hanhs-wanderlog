@@ -100,6 +100,7 @@
 }
 
 .card {
+  position: relative;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -110,6 +111,51 @@
 
 .card:hover {
   border-color: var(--border-strong);
+}
+
+.cardActions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  gap: 4px;
+}
+
+.cardIconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cardIconButton:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.cardIconButtonDanger:hover {
+  border-color: #B3261E;
+  color: #B3261E;
+}
+
+.deleteWarning {
+  flex: 1;
+  min-width: 220px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.deleteConfirmButton {
+  border-color: #B3261E !important;
+  color: #B3261E;
 }
 
 .cardPast {

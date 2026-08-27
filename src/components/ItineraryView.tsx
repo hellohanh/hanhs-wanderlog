@@ -14,7 +14,7 @@ import {
 } from '@dnd-kit/core'
 import { supabase } from '../lib/supabaseClient'
 import { loadGoogleMaps } from '../lib/googleMapsLoader'
-import { categoryConfig, groupPinsByCategory } from '../lib/pinCategories'
+import { groupPinsByCategory, pinBadgeColor } from '../lib/pinCategories'
 import type { Trip, Pin, ItineraryDay, ItineraryStop, TravelLeg, TravelMode as LegMode } from '../types'
 import styles from './ItineraryView.module.css'
 
@@ -304,27 +304,6 @@ function timezoneAbbreviation(timeZone: string, dateStr: string, timeStr: string
   }
 }
 
-// Full IANA timezone list for the searchable picker, via the runtime
-// when available (Intl.supportedValuesOf — supported in all current
-// browsers as of this app's build). Small fallback list covers the
-// rare case it's missing, so the picker never comes up completely
-// empty.
-const FALLBACK_TIMEZONES = [
-  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-  'America/Anchorage', 'Pacific/Honolulu', 'America/Toronto', 'America/Vancouver',
-  'America/Mexico_City', 'America/Sao_Paulo', 'America/Bogota',
-  'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid', 'Europe/Rome',
-  'Europe/Amsterdam', 'Europe/Zurich', 'Europe/Istanbul', 'Europe/Moscow',
-  'Africa/Cairo', 'Africa/Johannesburg', 'Asia/Dubai', 'Asia/Riyadh',
-  'Asia/Karachi', 'Asia/Kolkata', 'Asia/Dhaka', 'Asia/Bangkok', 'Asia/Ho_Chi_Minh',
-  'Asia/Jakarta', 'Asia/Singapore', 'Asia/Hong_Kong', 'Asia/Shanghai',
-  'Asia/Taipei', 'Asia/Seoul', 'Asia/Tokyo', 'Australia/Perth', 'Australia/Sydney',
-  'Pacific/Auckland', 'UTC'
-]
-
-const ALL_TIMEZONES: string[] =
-  typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : FALLBACK_TIMEZONES
-
 // Whole-day offset between arrival and departure dates (0 for a
 // same-day leg, 1 for "arrives the next day", etc.) — shown as a
 // small "+N" badge next to the arrival time, the same convention most
@@ -442,7 +421,11 @@ const HOUR_PX = 60
 const SNAP_MIN = 15
 const DEFAULT_DURATION_MIN = 60
 const MIN_BLOCK_PX = 22
-const SCROLL_TO_HOUR = 7
+// SCROLL_TO_HOUR is the top of the default visible window; paired
+// with .timelineScroll's max-height (18 hours' worth, 1080px) in the
+// CSS, this makes the default view exactly 06:00-00:00 (midnight) —
+// change one, change the other.
+const SCROLL_TO_HOUR = 6
 const DAY_MINUTES = 24 * 60
 
 function timeToMinutes(t: string | null | undefined): number | null {
@@ -499,6 +482,8 @@ export default function ItineraryView({ tripId, trip }: Props) {
   const [savingStop, setSavingStop] = useState(false)
   const [loadingDays, setLoadingDays] = useState(true)
   const [addingDay, setAddingDay] = useState(false)
+  const [deletingDayId, setDeletingDayId] = useState<string | null>(null)
+  const [deletingDayBusy, setDeletingDayBusy] = useState(false)
   const [routeMode, setRouteMode] = useState<RouteMode>('DRIVING')
   const [segments, setSegments] = useState<Segment[]>([])
   const [loadingRoute, setLoadingRoute] = useState(false)
@@ -532,8 +517,12 @@ export default function ItineraryView({ tripId, trip }: Props) {
   useEffect(() => {
     loadDays()
     loadPins()
+    // trip.start_date/end_date included deliberately (not just tripId)
+    // so editing the trip's dates while already on this tab re-runs
+    // loadDays() and picks up any newly-in-range dates immediately,
+    // rather than only taking effect on the next full remount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripId])
+  }, [tripId, trip.start_date, trip.end_date])
 
   useEffect(() => {
     setLegForm(null)
@@ -552,6 +541,17 @@ export default function ItineraryView({ tripId, trip }: Props) {
   }, [selectedDayId])
 
   useEffect(() => {
+    // The container div this effect needs doesn't exist yet while
+    // loadingDays is true — the component's early return above (the
+    // "loading itinerary…" state) renders only a <p>, not the real
+    // JSX tree with <div ref={miniMapContainer}>. With an empty
+    // dependency array this effect would only ever get ONE attempt,
+    // during that loading render, always find the ref null, and never
+    // fire again once the real container actually mounts — which is
+    // why the mini map was reliably blank on every load, not just
+    // sometimes. Re-running once loadingDays flips to false gives it
+    // a second, now-valid attempt.
+    if (loadingDays) return
     loadGoogleMaps().then(() => {
       if (!miniMapContainer.current || miniMapRef.current) return
       const map = new google.maps.Map(miniMapContainer.current, {
@@ -570,7 +570,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
       drawMiniMap()
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadingDays])
 
   useEffect(() => {
     computeRouteAndDraw()
@@ -604,31 +604,82 @@ export default function ItineraryView({ tripId, trip }: Props) {
       return
     }
 
-    if ((data ?? []).length === 0 && trip.start_date && trip.end_date) {
-      const dates = eachDateInRange(trip.start_date, trip.end_date)
-      const rows = dates.map((date, i) => ({ trip_id: tripId, day_number: i + 1, date }))
-      const { error: insertError } = await supabase.from('itinerary_days').insert(rows)
-      if (insertError) {
-        console.error('Failed to auto-generate itinerary days', insertError)
-        setLoadingDays(false)
-        return
+    let finalDays = data ?? []
+
+    // Covers both "brand new trip, generate every day" AND "trip's
+    // dates got edited after days already existed" (e.g. the end date
+    // moved out, or the start date moved earlier) — syncDaysToTripDateRange
+    // finds whatever dates in the trip's range aren't represented yet
+    // and adds them, so the day tabs stay in sync with the trip's
+    // actual dates rather than only ever generating once at creation.
+    if (trip.start_date && trip.end_date) {
+      const changed = await syncDaysToTripDateRange(finalDays, trip.start_date, trip.end_date)
+      if (changed) {
+        const { data: refreshed } = await supabase
+          .from('itinerary_days')
+          .select('*')
+          .eq('trip_id', tripId)
+          .order('day_number')
+        finalDays = refreshed ?? finalDays
       }
-      const { data: regenerated } = await supabase
-        .from('itinerary_days')
-        .select('*')
-        .eq('trip_id', tripId)
-        .order('day_number')
-      setDays(regenerated ?? [])
-      setSelectedDayId(regenerated?.[0]?.id ?? null)
-      loadAllTravelLegs((regenerated ?? []).map(d => d.id))
-      setLoadingDays(false)
-      return
     }
 
-    setDays(data ?? [])
-    setSelectedDayId(prev => prev ?? data?.[0]?.id ?? null)
-    loadAllTravelLegs((data ?? []).map(d => d.id))
+    setDays(finalDays)
+    setSelectedDayId(prev => prev ?? finalDays[0]?.id ?? null)
+    loadAllTravelLegs(finalDays.map(d => d.id))
     setLoadingDays(false)
+  }
+
+  // Adds any date in [startDate, endDate] that isn't already
+  // represented by an existing itinerary_day, and renumbers day_number
+  // so the dated days stay in chronological order (with any manual,
+  // dateless days pushed after them, keeping their own relative
+  // order) — needed for both "brand new trip" (no dated days yet, so
+  // every date in range is "missing") and "trip's date range changed
+  // after days already existed" (only the newly-added dates are
+  // missing). Renumbering goes through a temporary high offset first
+  // (the tempOffset step below) specifically to avoid transiently
+  // colliding with the table's unique(trip_id, day_number) constraint
+  // while numbers are being reassigned — Postgres checks uniqueness
+  // per statement, not deferred, so updating straight to final numbers
+  // in one pass can collide with another row's current number.
+  // Returns whether anything actually changed, so the caller knows
+  // whether to re-fetch.
+  async function syncDaysToTripDateRange(existingDays: ItineraryDay[], startDate: string, endDate: string): Promise<boolean> {
+    const fullRange = eachDateInRange(startDate, endDate)
+    const datedDays = existingDays.filter(d => d.date)
+    const manualDays = existingDays.filter(d => !d.date)
+    const existingDateSet = new Set(datedDays.map(d => d.date))
+    const missingDates = fullRange.filter(d => !existingDateSet.has(d))
+    if (missingDates.length === 0) return false
+
+    const combinedDated = [
+      ...datedDays.map(d => ({ id: d.id as string | null, date: d.date! })),
+      ...missingDates.map(date => ({ id: null as string | null, date }))
+    ].sort((a, b) => a.date.localeCompare(b.date))
+
+    const tempOffset = 10000
+    for (const d of existingDays) {
+      await supabase.from('itinerary_days').update({ day_number: d.day_number + tempOffset }).eq('id', d.id)
+    }
+
+    let dayNum = 1
+    for (const entry of combinedDated) {
+      if (entry.id) {
+        await supabase.from('itinerary_days').update({ day_number: dayNum }).eq('id', entry.id)
+      } else {
+        await supabase.from('itinerary_days').insert({ trip_id: tripId, day_number: dayNum, date: entry.date })
+      }
+      dayNum++
+    }
+
+    const sortedManual = [...manualDays].sort((a, b) => a.day_number - b.day_number)
+    for (const d of sortedManual) {
+      await supabase.from('itinerary_days').update({ day_number: dayNum }).eq('id', d.id)
+      dayNum++
+    }
+
+    return true
   }
 
   async function addManualDay() {
@@ -647,6 +698,33 @@ export default function ItineraryView({ tripId, trip }: Props) {
     setDays(prev => [...prev, data])
     setSelectedDayId(data.id)
     loadAllTravelLegs([...days.map(d => d.id), data.id])
+  }
+
+  // A single delete on itinerary_days — the schema's on-delete-cascade
+  // FKs take care of that day's stops and travel legs automatically,
+  // same pattern as trip deletion. Worth knowing: if the deleted day
+  // has a real date that still falls inside the trip's start/end
+  // range, and the trip's dates get edited again later, that date
+  // will be treated as "missing" by syncDaysToTripDateRange and
+  // recreated — deleting a day doesn't shrink the trip's own date
+  // range, there's no way to represent "skip this one date" in a
+  // simple start/end range. Not an issue unless the trip's dates get
+  // re-edited after the delete.
+  async function confirmDeleteDay() {
+    if (!deletingDayId) return
+    setDeletingDayBusy(true)
+    const { error } = await supabase.from('itinerary_days').delete().eq('id', deletingDayId)
+    setDeletingDayBusy(false)
+    if (error) {
+      console.error('Failed to delete day', error)
+      return
+    }
+    const remaining = days.filter(d => d.id !== deletingDayId)
+    setDays(remaining)
+    if (selectedDayId === deletingDayId) {
+      setSelectedDayId(remaining[0]?.id ?? null)
+    }
+    setDeletingDayId(null)
   }
 
   async function loadPins() {
@@ -980,7 +1058,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
 
     const bounds = new google.maps.LatLngBounds()
     timedStops.forEach((stop, i) => {
-      const cfg = categoryConfig(stop.pin.category)
+      const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
       const marker = new google.maps.Marker({
         position: { lat: stop.pin.lat, lng: stop.pin.lng },
         map,
@@ -988,7 +1066,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
           scale: 11,
-          fillColor: cfg.color,
+          fillColor: badgeColor,
           fillOpacity: 1,
           strokeColor: '#FFFFFF',
           strokeWeight: 2
@@ -1037,6 +1115,22 @@ export default function ItineraryView({ tripId, trip }: Props) {
         .sort((a, b) => (timeToMinutes(a.from_time) ?? 0) - (timeToMinutes(b.from_time) ?? 0)),
     [travelLegs]
   )
+  // Card list above the timeline — always earliest-departure first, not
+  // insertion/order_index order. Legs without a departure time yet
+  // (still being filled in) sort to the end, after every timed one,
+  // rather than being excluded like timedLegs above.
+  const sortedTravelLegs = useMemo(
+    () =>
+      [...travelLegs].sort((a, b) => {
+        const aMin = timeToMinutes(a.from_time)
+        const bMin = timeToMinutes(b.from_time)
+        if (aMin == null && bMin == null) return 0
+        if (aMin == null) return 1
+        if (bMin == null) return -1
+        return aMin - bMin
+      }),
+    [travelLegs]
+  )
   // Side-by-side columns for overlapping legs (e.g. two family units'
   // flights around the same time) — computed once across BOTH normal
   // and continuation blocks together, since a continuation block can
@@ -1078,6 +1172,25 @@ export default function ItineraryView({ tripId, trip }: Props) {
             >
               day {day.day_number}
               {day.date && <span className={styles.dayTabDate}> · {formatDayDate(day.date)}</span>}
+              <span
+                className={styles.dayTabDelete}
+                role="button"
+                tabIndex={0}
+                title="delete day"
+                aria-label={`delete day ${day.day_number}`}
+                onClick={e => {
+                  e.stopPropagation()
+                  setDeletingDayId(day.id)
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    setDeletingDayId(day.id)
+                  }
+                }}
+              >
+                ×
+              </span>
             </button>
           ))}
           <button className={styles.addDayButton} onClick={addManualDay} disabled={addingDay}>
@@ -1085,55 +1198,74 @@ export default function ItineraryView({ tripId, trip }: Props) {
           </button>
         </div>
 
+        {deletingDayId && (
+          <div className={styles.popupBackdrop} onClick={() => setDeletingDayId(null)}>
+            <div className={styles.popupCard} onClick={e => e.stopPropagation()}>
+              <p className={styles.deleteWarning}>
+                Delete this day? Everything scheduled on it — stops and flights included — goes with it. This can't
+                be undone.
+              </p>
+              <div className={styles.travelFormActions}>
+                <button className={styles.travelFormDelete} onClick={confirmDeleteDay} disabled={deletingDayBusy}>
+                  {deletingDayBusy ? '…' : 'delete day'}
+                </button>
+                <button className={styles.travelFormCancel} onClick={() => setDeletingDayId(null)} disabled={deletingDayBusy}>
+                  cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {days.length === 0 && (
           <p className={styles.hint}>no days yet — add one above to start building the itinerary.</p>
         )}
 
         {days.length > 0 && (
-          <>
-            <p className={styles.travelSectionTitle}>Travel</p>
+          <div className={styles.dayContent}>
+            <div className={styles.travelArea}>
+              <p className={styles.travelSectionTitle}>Travel</p>
 
-            <div className={styles.travelHeader}>
-              <button type="button" className={styles.addTravelButton} onClick={startAddLeg}>
-                + add travel
-              </button>
-              <button type="button" className={styles.mapToggleButton} onClick={() => setShowMapPopup(true)}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 20l-5-2V6l5 2 6-2 5 2v12l-5-2-6 2z" />
-                  <line x1="9" y1="8" x2="9" y2="20" />
-                  <line x1="15" y1="6" x2="15" y2="18" />
-                </svg>
-                map
-              </button>
+              <div className={styles.travelHeader}>
+                <button type="button" className={styles.addTravelButton} onClick={startAddLeg}>
+                  + add travel
+                </button>
+                <button type="button" className={styles.mapToggleButton} onClick={() => setShowMapPopup(true)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 20l-5-2V6l5 2 6-2 5 2v12l-5-2-6 2z" />
+                    <line x1="9" y1="8" x2="9" y2="20" />
+                    <line x1="15" y1="6" x2="15" y2="18" />
+                  </svg>
+                  map
+                </button>
+              </div>
+
+              {travelLegs.length > 0 && (
+                <div className={styles.travelCardList}>
+                  {sortedTravelLegs.map(leg => (
+                    <TravelCardFull key={leg.id} leg={leg} onEdit={() => startEditLeg(leg)} />
+                  ))}
+                </div>
+              )}
             </div>
 
-            {travelLegs.length > 0 && (
-              <div className={styles.travelCardList}>
-                {travelLegs.map(leg => (
-                  <TravelCardFull key={leg.id} leg={leg} onEdit={() => startEditLeg(leg)} />
-                ))}
-              </div>
-            )}
+            <TimelineZone
+              scrollRef={timelineWrapperRef}
+              timedStops={timedStops}
+              timedLegs={timedLegs}
+              continuationLegs={continuationLegs}
+              legColumnLayout={legColumnLayout}
+              onStopClick={setEditingStop}
+              onLegClick={startEditLeg}
+            />
 
-            <div className={styles.dayContent}>
-              <TimelineZone
-                scrollRef={timelineWrapperRef}
-                timedStops={timedStops}
-                timedLegs={timedLegs}
-                continuationLegs={continuationLegs}
-                legColumnLayout={legColumnLayout}
-                onStopClick={setEditingStop}
-                onLegClick={startEditLeg}
+            <div className={styles.poolColumn}>
+              <PoolZone
+                pins={unscheduledPins}
+                onQuickAdd={pinId => addStopToDayAtTime(pinId, nextDefaultStartMinutes())}
               />
-
-              <div className={styles.poolColumn}>
-                <PoolZone
-                  pins={unscheduledPins}
-                  onQuickAdd={pinId => addStopToDayAtTime(pinId, nextDefaultStartMinutes())}
-                />
-              </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -1142,13 +1274,13 @@ export default function ItineraryView({ tripId, trip }: Props) {
           <div className={styles.poolChip}>
             <span
               className={styles.poolChipDot}
-              style={{ backgroundColor: categoryConfig(activePin.category).color }}
+              style={{ backgroundColor: pinBadgeColor(activePin.category, activePin.icon) }}
             />
             <span>{activePin.name}</span>
           </div>
         )}
         {activeStop && (
-          <div className={styles.dragPreviewBlock} style={{ backgroundColor: categoryConfig(activeStop.pin.category).color }}>
+          <div className={styles.dragPreviewBlock} style={{ backgroundColor: pinBadgeColor(activeStop.pin.category, activeStop.pin.icon) }}>
             {activeStop.pin.name}
           </div>
         )}
@@ -1345,13 +1477,6 @@ function TravelLegForm({
         />
         <TimeSelect24 value={form.fromTime} onChange={v => onChange({ ...form, fromTime: v })} />
       </div>
-      <div className={styles.travelFormRow}>
-        <TimezoneInput
-          value={form.fromTimezone}
-          onChange={v => onChange({ ...form, fromTimezone: v })}
-          placeholder="departure timezone (e.g. Chicago)"
-        />
-      </div>
 
       <div className={styles.travelFormRow}>
         {form.mode === 'flight' ? (
@@ -1378,18 +1503,6 @@ function TravelLegForm({
         />
         <TimeSelect24 value={form.toTime} onChange={v => onChange({ ...form, toTime: v })} />
       </div>
-      <div className={styles.travelFormRow}>
-        <TimezoneInput
-          value={form.toTimezone}
-          onChange={v => onChange({ ...form, toTimezone: v })}
-          placeholder="arrival timezone (e.g. Los Angeles)"
-        />
-      </div>
-      {form.fromTimezone && !form.toTimezone && (
-        <p className={styles.travelFormHint}>
-          Set the arrival timezone too, or duration won't account for the time difference.
-        </p>
-      )}
 
       <div className={styles.travelFormActions}>
         <button
@@ -1493,82 +1606,6 @@ function AirlineCarrierInput({ value, onChange }: { value: string; onChange: (va
 // finds "America/Los_Angeles". Each option shows its current UTC
 // offset for context, computed only for the short filtered list
 // (cheap) rather than for all ~400 zones on every keystroke.
-function TimezoneInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
-  const [open, setOpen] = useState(false)
-  const [highlight, setHighlight] = useState(0)
-
-  const query = value.trim().toLowerCase()
-  const matches =
-    query.length > 0
-      ? ALL_TIMEZONES.filter(tz => tz.toLowerCase().replace(/_/g, ' ').includes(query)).slice(0, 8)
-      : []
-
-  function select(tz: string) {
-    onChange(tz)
-    setOpen(false)
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open || matches.length === 0) return
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setHighlight(h => (h + 1) % matches.length)
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setHighlight(h => (h - 1 + matches.length) % matches.length)
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      select(matches[highlight])
-    } else if (e.key === 'Escape') {
-      setOpen(false)
-    }
-  }
-
-  return (
-    <div className={styles.autocompleteWrap}>
-      <input
-        className={styles.travelFormInput}
-        placeholder={placeholder}
-        value={value}
-        onChange={e => {
-          onChange(e.target.value)
-          setOpen(true)
-          setHighlight(0)
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onKeyDown={handleKeyDown}
-      />
-      {open && matches.length > 0 && (
-        <div className={styles.autocompleteList}>
-          {matches.map((tz, i) => {
-            const offsetMin = utcOffsetMinutesAt(new Date(), tz)
-            let offsetLabel = ''
-            if (offsetMin != null) {
-              const sign = offsetMin < 0 ? '-' : '+'
-              const hours = Math.abs(offsetMin) / 60
-              offsetLabel = `UTC${sign}${Number.isInteger(hours) ? hours : hours.toFixed(1)}`
-            }
-            return (
-              <div
-                key={tz}
-                className={styles.autocompleteOption}
-                data-highlighted={i === highlight}
-                onMouseDown={e => {
-                  e.preventDefault()
-                  select(tz)
-                }}
-              >
-                {tz.replace(/_/g, ' ')} {offsetLabel && <span className={styles.autocompleteHint}>{offsetLabel}</span>}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // Flight-mode from/to picker — searches AIRPORTS by code or city, and
 // on selection fills the location field as "City / CODE" (matching
 // the old free-text placeholder's format) AND the matching timezone
@@ -1691,13 +1728,20 @@ function formatLocationLabel(location: string): string {
   return location.toUpperCase()
 }
 
-function TravelCardFull({ leg, onEdit }: { leg: TravelLeg; onEdit: () => void }) {
+// Shared between the card list (TravelCardFull) and the timeline
+// blocks (TimelineLegBlock/TimelineContinuationBlock) — the user
+// wanted the timeline to show the same information as the cards, so
+// this is the actual content, factored out once rather than kept in
+// sync by hand in three places. `showDeparture=false` is only for a
+// continuation block, which has no departure side to show (that's on
+// its actual departure day).
+function TravelCardContent({ leg, showDeparture = true }: { leg: TravelLeg; showDeparture?: boolean }) {
   const cfg = LEG_MODE_CONFIG[leg.mode]
   const duration = legDurationParts(leg)
   const dayOffset = legDayOffset(leg)
 
   return (
-    <div className={styles.travelCardFull}>
+    <>
       <div className={styles.travelCardDuration}>
         {duration ? (
           <>
@@ -1724,39 +1768,43 @@ function TravelCardFull({ leg, onEdit }: { leg: TravelLeg; onEdit: () => void })
             {leg.reference ? ` · ${leg.reference}` : ''}
           </span>
         </div>
-        {(leg.from_time || leg.to_time) && (
+        {((showDeparture && leg.from_time) || leg.to_time) && (
           <div className={styles.travelCardTimes}>
-            <div className={styles.travelCardEndpoint}>
-              <span className={styles.travelCardLocation}>{formatLocationLabel(leg.from_location)}</span>
-              <span className={styles.travelCardTimeValue}>{leg.from_time?.slice(0, 5)}</span>
-              {leg.from_timezone && leg.from_date && leg.from_time && (
-                <span className={styles.travelCardTz}>
-                  {timezoneAbbreviation(leg.from_timezone, leg.from_date, leg.from_time)}
-                </span>
-              )}
-            </div>
+            {showDeparture && (
+              <div className={styles.travelCardEndpoint}>
+                <span className={styles.travelCardLocation}>{formatLocationLabel(leg.from_location)}</span>
+                <span className={styles.travelCardTimeValue}>{leg.from_time?.slice(0, 5)}</span>
+                {leg.from_timezone && leg.from_date && leg.from_time && (
+                  <span className={styles.travelCardTz}>
+                    {timezoneAbbreviation(leg.from_timezone, leg.from_date, leg.from_time)}
+                  </span>
+                )}
+              </div>
+            )}
 
             {leg.to_time && (
               <>
-                <div className={styles.travelCardDivider}>
-                  {leg.mode === 'flight' ? (
-                    <>
-                      <span className={styles.travelCardDividerDots}>•••••</span>
-                      <span className={styles.travelCardDividerPlane}>{'\u2708\uFE0E'}</span>
-                      <span className={styles.travelCardDividerDots}>•••••</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className={styles.travelCardDividerDots}>•••••</span>
-                      <span
-                        className={styles.travelCardDividerIcon}
-                        style={{ color: cfg.color }}
-                        dangerouslySetInnerHTML={{ __html: LEG_DIVIDER_ICONS[leg.mode] }}
-                      />
-                      <span className={styles.travelCardDividerDots}>•••••</span>
-                    </>
-                  )}
-                </div>
+                {showDeparture && (
+                  <div className={styles.travelCardDivider}>
+                    {leg.mode === 'flight' ? (
+                      <>
+                        <span className={styles.travelCardDividerDots}>•••••</span>
+                        <span className={styles.travelCardDividerPlane}>{'\u2708\uFE0E'}</span>
+                        <span className={styles.travelCardDividerDots}>•••••</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className={styles.travelCardDividerDots}>•••••</span>
+                        <span
+                          className={styles.travelCardDividerIcon}
+                          style={{ color: cfg.color }}
+                          dangerouslySetInnerHTML={{ __html: LEG_DIVIDER_ICONS[leg.mode] }}
+                        />
+                        <span className={styles.travelCardDividerDots}>•••••</span>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div className={styles.travelCardEndpoint}>
                   <span className={styles.travelCardLocation}>{formatLocationLabel(leg.to_location)}</span>
@@ -1773,7 +1821,14 @@ function TravelCardFull({ leg, onEdit }: { leg: TravelLeg; onEdit: () => void })
           </div>
         )}
       </div>
+    </>
+  )
+}
 
+function TravelCardFull({ leg, onEdit }: { leg: TravelLeg; onEdit: () => void }) {
+  return (
+    <div className={styles.travelCardFull}>
+      <TravelCardContent leg={leg} />
       <button
         type="button"
         className={styles.travelCardEditButton}
@@ -1835,13 +1890,13 @@ function StopEditPopup({
 }) {
   const [start, setStart] = useState(stop.start_time ?? '')
   const [end, setEnd] = useState(stop.end_time ?? '')
-  const cfg = categoryConfig(stop.pin.category)
+  const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
 
   return (
     <div className={styles.popupBackdrop} onClick={onClose}>
       <div className={styles.popupCard} onClick={e => e.stopPropagation()}>
         <div className={styles.stopEditHeader}>
-          <span className={styles.stopEditDot} style={{ backgroundColor: cfg.color }} />
+          <span className={styles.stopEditDot} style={{ backgroundColor: badgeColor }} />
           <p className={styles.stopEditName}>{stop.pin.name}</p>
         </div>
         <div className={styles.travelFormRow}>
@@ -1896,7 +1951,7 @@ function PoolZone({ pins, onQuickAdd }: { pins: Pin[]; onQuickAdd: (pinId: strin
 
 function PoolChip({ pin, onQuickAdd }: { pin: Pin; onQuickAdd: (pinId: string) => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `pool-${pin.id}` })
-  const cfg = categoryConfig(pin.category)
+  const badgeColor = pinBadgeColor(pin.category, pin.icon)
 
   return (
     <div
@@ -1906,7 +1961,7 @@ function PoolChip({ pin, onQuickAdd }: { pin: Pin; onQuickAdd: (pinId: string) =
       {...listeners}
       {...attributes}
     >
-      <span className={styles.poolChipDot} style={{ backgroundColor: cfg.color }} />
+      <span className={styles.poolChipDot} style={{ backgroundColor: badgeColor }} />
       <span>{pin.name}</span>
       <button
         type="button"
@@ -1992,7 +2047,7 @@ function TimelineZone({
 
 function TimelineStopBlock({ stop, onClick }: { stop: StopWithPin; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `tstop-${stop.id}` })
-  const cfg = categoryConfig(stop.pin.category)
+  const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
   const start = timeToMinutes(stop.start_time) ?? 0
   const end = timeToMinutes(stop.end_time)
   const top = (start / 60) * HOUR_PX
@@ -2002,7 +2057,7 @@ function TimelineStopBlock({ stop, onClick }: { stop: StopWithPin; onClick: () =
     <div
       ref={setNodeRef}
       className={styles.timelineBlock}
-      style={{ top, height, backgroundColor: cfg.color, opacity: isDragging ? 0.4 : 1 }}
+      style={{ top, height, backgroundColor: badgeColor, opacity: isDragging ? 0.4 : 1 }}
       onClick={onClick}
       {...listeners}
       {...attributes}
@@ -2015,6 +2070,14 @@ function TimelineStopBlock({ stop, onClick }: { stop: StopWithPin; onClick: () =
     </div>
   )
 }
+
+// Minimum block height when showing full card content on the timeline
+// (per the user's ask — same info as the card list) rather than the
+// old compact one-line strip. Duration-based height (legBlockGeometry/
+// continuationBlockGeometry) still applies for genuinely long legs;
+// this is just a floor so a short local flight's card content isn't
+// crushed into an unreadable sliver.
+const MIN_LEG_CARD_PX = 108
 
 function TimelineLegBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: () => void; layout?: ColumnLayout }) {
   const cfg = LEG_MODE_CONFIG[leg.mode]
@@ -2033,7 +2096,8 @@ function TimelineLegBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: (
   // calendar date than from_date — either means the block would run
   // off the bottom of today's track, so it's clipped there with a
   // "continues" indicator instead.
-  const { top, height, crossesMidnight } = legBlockGeometry(leg)
+  const { top, height: geometryHeight, crossesMidnight } = legBlockGeometry(leg)
+  const height = Math.max(geometryHeight, MIN_LEG_CARD_PX)
 
   // Not draggable, on purpose — a flight's position encodes real
   // date/time/timezone data, so an accidental drag could silently
@@ -2042,23 +2106,18 @@ function TimelineLegBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: (
   // popup, change the actual time/date fields there).
   return (
     <div
-      className={styles.timelineBlock}
+      className={styles.timelineLegCard}
       style={{
         top,
         height,
-        backgroundColor: cfg.color,
+        borderLeftColor: cfg.color,
         cursor: 'pointer',
         touchAction: 'pan-y',
         ...blockPositionStyle(layout)
       }}
       onClick={onClick}
     >
-      <CarrierBadge mode={leg.mode} carrier={leg.carrier} size={16} />
-      <span className={styles.timelineBlockName}>{leg.carrier || cfg.label}{leg.reference ? ` ${leg.reference}` : ''}</span>
-      <span className={styles.timelineBlockTime}>
-        {leg.from_time?.slice(0, 5)}
-        {leg.to_time ? `–${leg.to_time.slice(0, 5)}` : ''}
-      </span>
+      <TravelCardContent leg={leg} />
       {crossesMidnight && <span className={styles.timelineBlockContinues}>continues next day →</span>}
     </div>
   )
@@ -2073,17 +2132,19 @@ function TimelineLegBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: (
 // actual departure day.
 function TimelineContinuationBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: () => void; layout?: ColumnLayout }) {
   const cfg = LEG_MODE_CONFIG[leg.mode]
-  const { top, height } = continuationBlockGeometry(leg)
+  const { top, height: geometryHeight } = continuationBlockGeometry(leg)
+  // +30 to account for the extra top padding (.timelineContinuationCard)
+  // that makes room for the "continued from" label — without it, the
+  // pushed-down content could clip against the block's overflow:hidden.
+  const height = Math.max(geometryHeight, MIN_LEG_CARD_PX + 30)
 
   return (
     <div
-      className={styles.timelineBlock}
-      style={{ top, height, backgroundColor: cfg.color, cursor: 'pointer', touchAction: 'pan-y', ...blockPositionStyle(layout) }}
+      className={`${styles.timelineLegCard} ${styles.timelineContinuationCard}`}
+      style={{ top, height, borderLeftColor: cfg.color, cursor: 'pointer', touchAction: 'pan-y', ...blockPositionStyle(layout) }}
       onClick={onClick}
     >
-      <CarrierBadge mode={leg.mode} carrier={leg.carrier} size={16} />
-      <span className={styles.timelineBlockName}>{leg.carrier || cfg.label}{leg.reference ? ` ${leg.reference}` : ''}</span>
-      <span className={styles.timelineBlockTime}>arrives {leg.to_time?.slice(0, 5)}</span>
+      <TravelCardContent leg={leg} showDeparture={false} />
       <span className={styles.timelineBlockContinuedFrom}>
         ← continued from {leg.from_date ? formatDayDate(leg.from_date) : 'yesterday'}
       </span>

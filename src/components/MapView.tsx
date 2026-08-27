@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { loadGoogleMaps } from '../lib/googleMapsLoader'
-import { CATEGORIES, ICON_VARIANTS, categoryConfig, groupPinsByCategory, pinIconSvg, type PinCategory } from '../lib/pinCategories'
+import { CATEGORIES, ICON_VARIANTS, categoryConfig, groupPinsByCategory, pinBadgeColor, pinIconSvg, type PinCategory } from '../lib/pinCategories'
 import type { Pin } from '../types'
 import styles from './MapView.module.css'
 
@@ -28,6 +28,7 @@ interface DraftPin {
 interface PlaceDetails {
   address?: string
   phone?: string
+  website?: string
 }
 
 // Hand-built trash icon for the pin-delete button in the sidebar —
@@ -68,12 +69,12 @@ function getPinOverlayClass() {
         const point = this.getProjection()?.fromLatLngToDivPixel(this.position)
         if (point) {
           this.el.style.position = 'absolute'
-          // Offsets track the marker's actual size (25x25, see .pinMarker in
+          // Offsets track the marker's actual size (33x33, see .pinOuter in
           // MapView.module.css): half the width to center horizontally, the
           // full height to anchor the teardrop's bottom point at the pin's
           // lat/lng. Keep these two in sync if the marker size ever changes.
-          this.el.style.left = `${point.x - 12.5}px`
-          this.el.style.top = `${point.y - 25}px`
+          this.el.style.left = `${point.x - 16.5}px`
+          this.el.style.top = `${point.y - 33}px`
         }
       }
 
@@ -84,6 +85,52 @@ function getPinOverlayClass() {
     PinOverlayClass = PinOverlay
   }
   return PinOverlayClass
+}
+
+// Same custom-OverlayView technique as pins above, but centered on its
+// point both ways (a pill label has no "tip" to anchor, unlike a
+// teardrop pin) via CSS transform: translate(-50%, -50%) rather than a
+// hardcoded pixel offset — so this doesn't need updating if the pill's
+// size ever changes. Needed because google.maps.Marker's built-in
+// `label` is plain colored text only — no background, padding, or
+// border-radius support, which a pill shape requires.
+let DistrictLabelOverlayClass:
+  | (new (position: google.maps.LatLng, el: HTMLElement) => google.maps.OverlayView)
+  | null = null
+
+function getDistrictLabelOverlayClass() {
+  if (!DistrictLabelOverlayClass) {
+    class DistrictLabelOverlay extends google.maps.OverlayView {
+      private el: HTMLElement
+      private position: google.maps.LatLng
+
+      constructor(position: google.maps.LatLng, el: HTMLElement) {
+        super()
+        this.position = position
+        this.el = el
+      }
+
+      onAdd() {
+        this.getPanes()?.overlayMouseTarget.appendChild(this.el)
+      }
+
+      draw() {
+        const point = this.getProjection()?.fromLatLngToDivPixel(this.position)
+        if (point) {
+          this.el.style.position = 'absolute'
+          this.el.style.left = `${point.x}px`
+          this.el.style.top = `${point.y}px`
+          this.el.style.transform = 'translate(-50%, -50%)'
+        }
+      }
+
+      onRemove() {
+        this.el.remove()
+      }
+    }
+    DistrictLabelOverlayClass = DistrictLabelOverlay
+  }
+  return DistrictLabelOverlayClass
 }
 
 export default function MapView({ tripId }: Props) {
@@ -103,7 +150,19 @@ export default function MapView({ tripId }: Props) {
   const [editingName, setEditingName] = useState(false)
   const [editNameValue, setEditNameValue] = useState('')
   const [editIconValue, setEditIconValue] = useState<string | undefined>(undefined)
+  const [hoveredPin, setHoveredPin] = useState<Pin | null>(null)
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null)
+  const [hoverDetails, setHoverDetails] = useState<PlaceDetails | null>(null)
+  const [hoverLoading, setHoverLoading] = useState(false)
+  const placeDetailsCache = useRef<Map<string, PlaceDetails | null>>(new Map())
+  const hoverOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverRequestId = useRef(0)
   const [savingName, setSavingName] = useState(false)
+  const [showDistricts, setShowDistricts] = useState(false)
+  const districtsLayerRef = useRef<google.maps.Data | null>(null)
+  const districtLabelsRef = useRef<google.maps.OverlayView[]>([])
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>([])
@@ -239,6 +298,66 @@ export default function MapView({ tripId }: Props) {
     map.setHeading((current + amount + 360) % 360)
   }
 
+  // HCMC's old, informal 22-district layout (pre-July-2025 — the
+  // official district system was abolished nationwide, but this is
+  // still how everyone, tourism guides included, actually navigates
+  // the city day to day). Static asset (public/hcm-districts.geojson,
+  // MIT-licensed via OpenStreetMap) rather than a live boundary API —
+  // simpler, no ongoing cost, and this data doesn't change. Loaded
+  // lazily on first toggle-on; after that, toggling just shows/hides
+  // the already-loaded layer and labels rather than reloading.
+  async function toggleDistricts() {
+    const map = mapRef.current
+    if (!map) return
+
+    const next = !showDistricts
+    setShowDistricts(next)
+
+    if (districtsLayerRef.current) {
+      districtsLayerRef.current.setMap(next ? map : null)
+      districtLabelsRef.current.forEach(m => m.setMap(next ? map : null))
+      return
+    }
+
+    if (!next) return
+
+    const dataLayer = new google.maps.Data({ map })
+    const LabelOverlayCls = getDistrictLabelOverlayClass()
+    dataLayer.loadGeoJson(`${import.meta.env.BASE_URL}hcm-districts.geojson`, {}, features => {
+      features.forEach((feature, i) => {
+        // Uniform spacing (i * 360/22) put neighboring districts at
+        // similar hues whenever they're also near each other in the
+        // file's order — which they often are, since districts are
+        // roughly numbered by geographic clustering (District 10/11,
+        // 5/6, etc. are both file-adjacent AND map-adjacent). The
+        // golden angle (~137.5°) instead — the standard trick for
+        // generating a sequence of maximally-separated hues — means no
+        // two nearby indices ever land close together on the color
+        // wheel, without needing to actually compute which districts
+        // border each other.
+        const hue = Math.round((i * 137.508) % 360)
+        dataLayer.overrideStyle(feature, {
+          fillColor: `hsl(${hue}, 65%, 55%)`,
+          fillOpacity: 0.2,
+          strokeColor: `hsl(${hue}, 65%, 40%)`,
+          strokeWeight: 1.5
+        })
+
+        const name = feature.getProperty('name') as string | undefined
+        const center = feature.getProperty('center') as [number, number] | undefined
+        if (name && center) {
+          const el = document.createElement('div')
+          el.className = styles.districtPill
+          el.textContent = name.toUpperCase()
+          const overlay = new LabelOverlayCls(new google.maps.LatLng(center[1], center[0]), el)
+          overlay.setMap(map)
+          districtLabelsRef.current.push(overlay)
+        }
+      })
+    })
+    districtsLayerRef.current = dataLayer
+  }
+
   function selectPin(pin: Pin) {
     setDraftPin(null)
     setSelectedPin(pin)
@@ -316,13 +435,14 @@ export default function MapView({ tripId }: Props) {
 
     pins.forEach(pin => {
       const cfg = categoryConfig(pin.category)
+      const badgeColor = pinBadgeColor(pin.category, pin.icon)
 
       const el = document.createElement('div')
       el.className = styles.pinMarker
       el.title = `${cfg.label}: ${pin.name}`
       el.innerHTML = `
         <span class="${styles.pinOuter}">
-          <span class="${styles.pinInner}" style="background:${cfg.color}">
+          <span class="${styles.pinInner}" style="background:${badgeColor}">
             <span class="${styles.pinIconWrap}">${pinIconSvg(pin.category, pin.icon)}</span>
           </span>
         </span>
@@ -333,6 +453,14 @@ export default function MapView({ tripId }: Props) {
         setDraftPin(null)
         setSelectedPin(pin)
       })
+      // Only wired on devices that actually support hover (desktop
+      // mice, trackpads) — touch can fire mouseenter without a clean
+      // matching mouseleave, which would risk leaving the tooltip stuck
+      // open after a tap on mobile. Mobile already has tap-to-select.
+      if (window.matchMedia('(hover: hover)').matches) {
+        el.addEventListener('mouseenter', () => handlePinHoverStart(pin, el))
+        el.addEventListener('mouseleave', handlePinHoverEnd)
+      }
 
       const overlay = new PinOverlayCls(new google.maps.LatLng(pin.lat, pin.lng), el)
       overlay.setMap(map)
@@ -367,6 +495,68 @@ export default function MapView({ tripId }: Props) {
     loadPlaceDetails(selectedPin)
   }, [selectedPin])
 
+  // Map-anchored popup for the selected pin — alongside the sidebar
+  // panel (which keeps its own separate open/close state), not instead
+  // of it, per the user's explicit choice. Mirrors the same
+  // selectedPin/placeDetails/loadingDetails state the sidebar already
+  // reads, rather than firing a second Places lookup. Closing the
+  // popup's own X also clears selectedPin, so the sidebar closes with
+  // it — the two don't have to be closed independently by design, just
+  // shown independently.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    if (!selectedPin) {
+      infoWindowRef.current?.close()
+      return
+    }
+
+    if (!infoWindowRef.current) {
+      // The InfoWindow anchors its tail at the raw lat/lng point — but
+      // that's exactly where our custom teardrop marker's TIP sits (see
+      // the OverlayView draw() offset above: the shape extends 33px
+      // upward from that point), so without an offset the popup's tail
+      // lands on the pin's base and the whole bubble overlaps the
+      // marker shape. Pushing the tail up by the marker's height (33px)
+      // clears it — the popup then sits on top of the pin instead of
+      // covering it.
+      infoWindowRef.current = new google.maps.InfoWindow({ pixelOffset: new google.maps.Size(0, -33) })
+      infoWindowRef.current.addListener('closeclick', () => setSelectedPin(null))
+    }
+    const iw = infoWindowRef.current
+
+    const mapsUrl = selectedPin.place_id
+      ? `https://www.google.com/maps/place/?q=place_id:${selectedPin.place_id}`
+      : `https://www.google.com/maps/search/?api=1&query=${selectedPin.lat},${selectedPin.lng}`
+
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+    const rows: string[] = []
+    if (loadingDetails) {
+      rows.push('<p style="margin:6px 0 0;font-size:13px;color:#6b6b66;">looking up details…</p>')
+    } else if (placeDetails) {
+      if (placeDetails.address) rows.push(`<p style="margin:6px 0 0;font-size:13px;">${esc(placeDetails.address)}</p>`)
+      if (placeDetails.phone) rows.push(`<p style="margin:4px 0 0;font-size:13px;">${esc(placeDetails.phone)}</p>`)
+      if (placeDetails.website) {
+        rows.push(
+          `<p style="margin:4px 0 0;font-size:13px;"><a href="${esc(placeDetails.website)}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">${esc(placeDetails.website)}</a></p>`
+        )
+      }
+    }
+
+    iw.setContent(`
+      <div style="font-family:'Segoe UI',sans-serif;min-width:200px;max-width:260px;">
+        <p style="margin:0;font-size:15px;font-weight:600;">${esc(selectedPin.name)}</p>
+        ${rows.join('')}
+        <p style="margin:8px 0 0;font-size:13px;"><a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">View in Google Maps</a></p>
+      </div>
+    `)
+    iw.setPosition({ lat: selectedPin.lat, lng: selectedPin.lng })
+    iw.open(map)
+  }, [selectedPin, placeDetails, loadingDetails])
+
   // Name/address/phone for the selected pin. Search-added pins carry a
   // real Google place_id (captured at creation, see startDraftFromSearchResult)
   // and get a direct Place Details (New) lookup. Pins without one — map-click
@@ -374,29 +564,34 @@ export default function MapView({ tripId }: Props) {
   // best-effort Text Search by name, biased to the pin's location; this can
   // mismatch or come up empty for generic names or non-business pins, which
   // is expected and handled as "no additional details found" below.
-  async function loadPlaceDetails(pin: Pin) {
-    setLoadingDetails(true)
+  // Pure fetch, no component state — shared by the sidebar's detail
+  // panel (loadPlaceDetails below) and the hover tooltip, so there's
+  // one lookup implementation instead of two copies that could drift.
+  // See loadPlaceDetails for the place_id-vs-fallback-search rationale.
+  async function fetchPlaceDetails(pin: Pin): Promise<PlaceDetails | null> {
     try {
       let address: string | undefined
       let phone: string | undefined
+      let website: string | undefined
 
       if (pin.place_id) {
         const res = await fetch(`https://places.googleapis.com/v1/places/${pin.place_id}`, {
           headers: {
             'X-Goog-Api-Key': apiKey,
-            'X-Goog-FieldMask': 'formattedAddress,internationalPhoneNumber'
+            'X-Goog-FieldMask': 'formattedAddress,internationalPhoneNumber,websiteUri'
           }
         })
         const data = await res.json()
         address = data.formattedAddress
         phone = data.internationalPhoneNumber
+        website = data.websiteUri
       } else {
         const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Goog-Api-Key': apiKey,
-            'X-Goog-FieldMask': 'places.formattedAddress,places.internationalPhoneNumber'
+            'X-Goog-FieldMask': 'places.formattedAddress,places.internationalPhoneNumber,places.websiteUri'
           },
           body: JSON.stringify({
             textQuery: pin.name,
@@ -412,15 +607,86 @@ export default function MapView({ tripId }: Props) {
         const match = (data.places ?? [])[0]
         address = match?.formattedAddress
         phone = match?.internationalPhoneNumber
+        website = match?.websiteUri
       }
 
-      setPlaceDetails(address || phone ? { address, phone } : null)
+      return address || phone || website ? { address, phone, website } : null
     } catch (err) {
       console.error('Place details lookup failed', err)
-      setPlaceDetails(null)
-    } finally {
-      setLoadingDetails(false)
+      return null
     }
+  }
+
+  // Hover tooltip on a map marker (desktop mouse only — touch doesn't
+  // fire these the same way, which is fine since mobile already has
+  // tap-to-select). 300ms hover-intent delay before showing anything
+  // or firing a lookup, so casually gliding the cursor across several
+  // pins doesn't trigger a burst of Places API calls; the cache means
+  // re-hovering the same pin afterward is instant either way. Closing
+  // has its own short, cancelable delay (a small hover-card pattern) —
+  // the tooltip sits just above the marker, so without it, moving the
+  // mouse from the marker up into the tooltip itself would trigger the
+  // marker's mouseleave first and close it before you could reach it.
+  function handlePinHoverStart(pin: Pin, el: HTMLElement) {
+    if (hoverCloseTimeoutRef.current) {
+      clearTimeout(hoverCloseTimeoutRef.current)
+      hoverCloseTimeoutRef.current = null
+    }
+    if (hoverOpenTimeoutRef.current) clearTimeout(hoverOpenTimeoutRef.current)
+    hoverOpenTimeoutRef.current = setTimeout(() => {
+      const containerRect = mapContainer.current?.getBoundingClientRect()
+      const elRect = el.getBoundingClientRect()
+      if (!containerRect) return
+
+      setHoveredPin(pin)
+      setHoverPos({ x: elRect.left - containerRect.left + elRect.width / 2, y: elRect.top - containerRect.top })
+      setHoverDetails(null)
+
+      const requestId = ++hoverRequestId.current
+      if (placeDetailsCache.current.has(pin.id)) {
+        setHoverDetails(placeDetailsCache.current.get(pin.id) ?? null)
+        return
+      }
+      setHoverLoading(true)
+      fetchPlaceDetails(pin).then(details => {
+        placeDetailsCache.current.set(pin.id, details)
+        if (hoverRequestId.current === requestId) {
+          setHoverDetails(details)
+          setHoverLoading(false)
+        }
+      })
+    }, 300)
+  }
+
+  function handlePinHoverEnd() {
+    if (hoverOpenTimeoutRef.current) clearTimeout(hoverOpenTimeoutRef.current)
+    hoverCloseTimeoutRef.current = setTimeout(() => {
+      hoverRequestId.current++
+      setHoveredPin(null)
+      setHoverPos(null)
+      setHoverDetails(null)
+      setHoverLoading(false)
+    }, 150)
+  }
+
+  function cancelHoverClose() {
+    if (hoverCloseTimeoutRef.current) {
+      clearTimeout(hoverCloseTimeoutRef.current)
+      hoverCloseTimeoutRef.current = null
+    }
+  }
+
+  async function loadPlaceDetails(pin: Pin) {
+    setLoadingDetails(true)
+    // .has() check (not ??) because a cached "no details found" result
+    // is legitimately `null` — `??` would otherwise treat that the same
+    // as "not cached yet" and re-fetch every time.
+    const details = placeDetailsCache.current.has(pin.id)
+      ? placeDetailsCache.current.get(pin.id)!
+      : await fetchPlaceDetails(pin)
+    placeDetailsCache.current.set(pin.id, details)
+    setPlaceDetails(details)
+    setLoadingDetails(false)
   }
 
   // Pin deletion: RLS mirrors E5 (full edit rights for every trip member,
@@ -564,6 +830,39 @@ export default function MapView({ tripId }: Props) {
               <button type="button" title="Rotate right" onClick={() => adjustHeading(20)}>
                 ⟳
               </button>
+            </div>
+          )}
+
+          {mapReady && (
+            <button
+              type="button"
+              className={styles.districtsToggle}
+              data-active={showDistricts}
+              onClick={toggleDistricts}
+              title="Show HCMC district boundaries"
+            >
+              districts
+            </button>
+          )}
+
+          {hoveredPin && hoverPos && (
+            <div
+              className={styles.hoverTooltip}
+              style={{ left: hoverPos.x, top: hoverPos.y }}
+              onMouseEnter={cancelHoverClose}
+              onMouseLeave={handlePinHoverEnd}
+            >
+              <p className={styles.hoverTooltipName}>{hoveredPin.name}</p>
+              {hoverLoading && <p className={styles.hoverTooltipHint}>looking up details…</p>}
+              {!hoverLoading && hoverDetails?.address && (
+                <p className={styles.hoverTooltipDetail}>{hoverDetails.address}</p>
+              )}
+              {!hoverLoading && hoverDetails?.phone && (
+                <p className={styles.hoverTooltipDetail}>{hoverDetails.phone}</p>
+              )}
+              {!hoverLoading && !hoverDetails && (
+                <p className={styles.hoverTooltipHint}>no additional details found</p>
+              )}
             </div>
           )}
         </div>
@@ -732,6 +1031,16 @@ export default function MapView({ tripId }: Props) {
                 {!loadingDetails && placeDetails?.phone && (
                   <p className={styles.placePhone}>{placeDetails.phone}</p>
                 )}
+                {!loadingDetails && placeDetails?.website && (
+                  <a
+                    className={styles.placePhone}
+                    href={placeDetails.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {placeDetails.website}
+                  </a>
+                )}
                 {!loadingDetails && !placeDetails && (
                   <p className={styles.hint}>no additional details found</p>
                 )}
@@ -769,7 +1078,7 @@ export default function MapView({ tripId }: Props) {
                         data-active={selectedPin?.id === pin.id}
                         onClick={() => selectPin(pin)}
                       >
-                        <span className={styles.pinnedDot} style={{ backgroundColor: group.color }} />
+                        <span className={styles.pinnedDot} style={{ backgroundColor: pinBadgeColor(pin.category, pin.icon) }} />
                         <span className={styles.pinnedName}>{pin.name}</span>
                       </button>
                     ))}
@@ -805,16 +1114,17 @@ function IconPicker({
     <div className={styles.iconPicker}>
       {variants.map(variant => {
         const isActive = (selected ?? 'general') === variant.key
+        const variantColor = variant.color ?? cfg.color
         return (
           <button
             key={variant.key}
             type="button"
             className={styles.iconPill}
-            style={isActive ? { borderColor: cfg.color, color: cfg.color, fontWeight: 500 } : undefined}
+            style={isActive ? { borderColor: variantColor, color: variantColor, fontWeight: 500 } : undefined}
             title={variant.label}
             onClick={() => onSelect(variant.key === 'general' ? undefined : variant.key)}
           >
-            <span className={styles.iconPillBadge} style={{ backgroundColor: cfg.color }}>
+            <span className={styles.iconPillBadge} style={{ backgroundColor: variantColor }}>
               <span dangerouslySetInnerHTML={{ __html: variant.svg }} />
             </span>
             {variant.label}
