@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import type { Trip } from '../types'
 import MapView from '../components/MapView'
+import ItineraryView from '../components/ItineraryView'
 import styles from './TripView.module.css'
 
 type Tab = 'map' | 'itinerary' | 'budget' | 'packing' | 'notes'
@@ -162,9 +163,7 @@ export default function TripView() {
 
       <div className={styles.content}>
         {activeTab === 'map' && <MapView tripId={tripId} />}
-        {activeTab === 'itinerary' && (
-          <p className={styles.placeholder}>itinerary builder — coming soon</p>
-        )}
+        {activeTab === 'itinerary' && trip && <ItineraryView tripId={tripId} trip={trip} />}
         {activeTab === 'budget' && (
           <p className={styles.placeholder}>budget tracking — coming soon</p>
         )}

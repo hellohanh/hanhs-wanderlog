@@ -26,7 +26,7 @@ export interface ItineraryDay {
   id: string
   trip_id: string
   day_number: number
-  date: string
+  date: string | null
 }
 
 export interface ItineraryStop {
@@ -34,7 +34,8 @@ export interface ItineraryStop {
   itinerary_day_id: string
   pin_id: string
   order_index: number
-  arrival_time: string | null
+  start_time: string | null
+  end_time: string | null
 }
 
 export interface BudgetItem {

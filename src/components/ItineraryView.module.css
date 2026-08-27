@@ -1,0 +1,279 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dayTabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dayTab {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dayTabActive {
+  border: 2px solid var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent-text-on-light);
+  font-weight: 500;
+  padding: 6px 13px;
+}
+
+.dayTabDate {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.addDayButton {
+  flex-shrink: 0;
+  border: 1px dashed var(--border-strong);
+  background: none;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.poolSection {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--surface-1);
+}
+
+.poolLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+}
+
+.poolList {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 32px;
+}
+
+.poolChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 6px 6px 8px;
+  background: var(--surface-2);
+  font-size: 13px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.poolChipDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.quickAddButton {
+  flex-shrink: 0;
+  border: none;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.quickAddButton:hover {
+  background: var(--accent-tint);
+  color: var(--accent-text-on-light);
+}
+
+.dayContent {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.dayList {
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+}
+
+.stopRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--surface-2);
+}
+
+.dragHandle {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  font-size: 15px;
+  padding: 2px;
+}
+
+.stopDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stopMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.stopName {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stopTimes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.timeInput {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  width: 92px;
+}
+
+.timeSep {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.removeButton {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius);
+}
+
+.removeButton:hover {
+  color: #C0392B;
+  background: var(--surface-1);
+}
+
+.segment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 6px 22px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-height: 16px;
+}
+
+.mapPane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modeToggle {
+  display: flex;
+  gap: 4px;
+}
+
+.modeButton {
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.modeButtonActive {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.miniMap {
+  flex: 1;
+  min-height: 220px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* ---- Mobile (≤768px): stack the day list and mini map ---- */
+@media (max-width: 768px) {
+  .dayContent {
+    grid-template-columns: 1fr;
+  }
+
+  .miniMap {
+    min-height: 180px;
+  }
+
+  .poolChip {
+    padding: 8px 8px 8px 10px;
+    font-size: 13px;
+  }
+
+  .stopRow {
+    padding: 12px 10px;
+  }
+
+  .dragHandle {
+    font-size: 17px;
+    padding: 6px;
+  }
+
+  .removeButton {
+    font-size: 20px;
+    padding: 6px;
+  }
+
+  .timeInput {
+    font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
+    width: 104px;
+  }
+}
