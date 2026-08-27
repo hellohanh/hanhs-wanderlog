@@ -151,6 +151,134 @@
   margin: 0;
 }
 
+.placeDetails {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.placeName {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.placeNameRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.placeNameRow .placeName {
+  margin: 0;
+}
+
+.deleteButton {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.deleteButton:hover {
+  color: #C0392B;
+  background: var(--surface-2);
+}
+
+.deleteConfirm {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.deleteConfirmYes,
+.deleteConfirmNo {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.deleteConfirmYes {
+  border-color: #C0392B;
+  color: #C0392B;
+}
+
+.placeAddress {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 2px;
+}
+
+.placePhone {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.pinnedSection {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.pinnedList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pinnedRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+}
+
+.pinnedRow:hover {
+  background: var(--surface-2);
+}
+
+.pinnedRow[data-active='true'] {
+  background: var(--surface-2);
+  font-weight: 500;
+}
+
+.pinnedDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pinnedName {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pinMarker {
   width: 44px;
   height: 44px;
@@ -292,7 +420,13 @@
     border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;
     box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
-    transform: translateY(100%);
+    /* Collapsed state is a "peek" rather than fully hidden — just
+       enough of the box's bottom edge (where .pinnedSection lives,
+       since it's the last child) shows to signal the pinned list is
+       there and tappable, without covering the map. Tapping a pin
+       selects it, which flips data-open to true and slides the full
+       sheet up. */
+    transform: translateY(calc(100% - 132px));
     transition: transform 0.25s ease;
     z-index: 3;
     padding: 16px 14px 20px;
@@ -355,6 +489,21 @@
 
   .searchForm button {
     padding: 10px 14px;
+  }
+
+  .pinnedRow {
+    padding: 10px 4px;
+  }
+
+  .deleteButton {
+    width: 34px;
+    height: 34px;
+  }
+
+  .deleteConfirmYes,
+  .deleteConfirmNo {
+    padding: 6px 10px;
+    font-size: 13px;
   }
 
   .searchResultRow button {

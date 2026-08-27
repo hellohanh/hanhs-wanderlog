@@ -17,6 +17,7 @@ export interface Pin {
   lat: number
   lng: number
   notes: string | null
+  place_id: string | null
   added_by: string
   created_at: string
 }

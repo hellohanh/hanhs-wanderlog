@@ -39,6 +39,7 @@ create table pins (
   lat double precision not null,
   lng double precision not null,
   notes text,
+  place_id text,
   added_by uuid references auth.users(id),
   created_at timestamptz default now()
 );
@@ -60,7 +61,7 @@ alter table trip_members enable row level security;
 -- automatically the way the Supabase dashboard's table UI does.
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on trips to authenticated;
-grant select, insert on pins to authenticated;
+grant select, insert, delete on pins to authenticated;
 grant select on trip_members to authenticated;
 
 -- Per E5 (SKILL.md): every invited member gets full edit rights,
@@ -100,6 +101,19 @@ create policy "trip members can view pins"
 create policy "trip members can add pins"
   on pins for insert
   with check (
+    exists (
+      select 1 from trips
+      where trips.id = pins.trip_id
+      and (
+        trips.owner_id = auth.uid()
+        or exists (select 1 from trip_members where trip_id = trips.id and user_id = auth.uid())
+      )
+    )
+  );
+
+create policy "trip members can delete pins"
+  on pins for delete
+  using (
     exists (
       select 1 from trips
       where trips.id = pins.trip_id

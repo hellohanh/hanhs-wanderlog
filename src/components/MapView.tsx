@@ -9,6 +9,7 @@ interface Props {
 }
 
 interface GooglePlaceResult {
+  id?: string
   displayName?: { text: string }
   formattedAddress?: string
   location?: { latitude: number; longitude: number }
@@ -21,6 +22,12 @@ interface DraftPin {
   lng: number
   name: string
   category: PinCategory
+  placeId?: string
+}
+
+interface PlaceDetails {
+  address?: string
+  phone?: string
 }
 
 // Small hand-built line icons (24x24 viewBox, white stroke/fill) — used
@@ -54,6 +61,10 @@ const CATEGORIES: { key: PinCategory; label: string; color: string }[] = [
 function categoryConfig(category: PinCategory) {
   return CATEGORIES.find(c => c.key === category) ?? CATEGORIES[0]
 }
+
+// Hand-built trash icon for the pin-delete button in the sidebar —
+// same inline-SVG, no-external-dependency approach as ICON_SVGS above.
+const TRASH_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`
 
 // Custom map-pin overlay: attaches a plain HTML element (the same
 // nested white-teardrop / colored-circle / icon structure used before)
@@ -109,6 +120,10 @@ export default function MapView({ tripId }: Props) {
   const [draftPin, setDraftPin] = useState<DraftPin | null>(null)
   const [nearbyEats, setNearbyEats] = useState<{ name: string; lat: number; lng: number }[]>([])
   const [loadingEats, setLoadingEats] = useState(false)
+  const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null)
+  const [loadingDetails, setLoadingDetails] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deletingPin, setDeletingPin] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>([])
@@ -194,7 +209,13 @@ export default function MapView({ tripId }: Props) {
     setPins(data ?? [])
   }
 
-  async function createPin(name: string, lat: number, lng: number, category: PinCategory) {
+  async function createPin(
+    name: string,
+    lat: number,
+    lng: number,
+    category: PinCategory,
+    placeId?: string
+  ) {
     const { data: userData } = await supabase.auth.getUser()
     const addedBy = userData.user?.id
 
@@ -204,6 +225,7 @@ export default function MapView({ tripId }: Props) {
       category,
       lat,
       lng,
+      place_id: placeId ?? null,
       added_by: addedBy
     })
 
@@ -235,9 +257,19 @@ export default function MapView({ tripId }: Props) {
     map.setHeading((current + amount + 360) % 360)
   }
 
+  function selectPin(pin: Pin) {
+    setDraftPin(null)
+    setSelectedPin(pin)
+    const map = mapRef.current
+    if (map) {
+      map.panTo({ lat: pin.lat, lng: pin.lng })
+      map.setZoom(14)
+    }
+  }
+
   async function confirmDraftPin() {
     if (!draftPin || !draftPin.name.trim()) return
-    await createPin(draftPin.name.trim(), draftPin.lat, draftPin.lng, draftPin.category)
+    await createPin(draftPin.name.trim(), draftPin.lat, draftPin.lng, draftPin.category, draftPin.placeId)
     setDraftPin(null)
   }
 
@@ -255,7 +287,7 @@ export default function MapView({ tripId }: Props) {
         headers: {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': apiKey,
-          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location'
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location'
         },
         body: JSON.stringify({ textQuery: searchQuery })
       })
@@ -277,7 +309,8 @@ export default function MapView({ tripId }: Props) {
       lat: result.location.latitude,
       lng: result.location.longitude,
       name,
-      category: 'attraction'
+      category: 'attraction',
+      placeId: result.id
     })
     setSearchResults([])
     setSearchQuery('')
@@ -331,6 +364,91 @@ export default function MapView({ tripId }: Props) {
     }
     loadNearbyEats(selectedPin)
   }, [selectedPin])
+
+  useEffect(() => {
+    setConfirmingDelete(false)
+  }, [selectedPin])
+
+  useEffect(() => {
+    if (!selectedPin) {
+      setPlaceDetails(null)
+      return
+    }
+    loadPlaceDetails(selectedPin)
+  }, [selectedPin])
+
+  // Name/address/phone for the selected pin. Search-added pins carry a
+  // real Google place_id (captured at creation, see startDraftFromSearchResult)
+  // and get a direct Place Details (New) lookup. Pins without one — map-click
+  // drops, or anything created before this feature — fall back to a
+  // best-effort Text Search by name, biased to the pin's location; this can
+  // mismatch or come up empty for generic names or non-business pins, which
+  // is expected and handled as "no additional details found" below.
+  async function loadPlaceDetails(pin: Pin) {
+    setLoadingDetails(true)
+    try {
+      let address: string | undefined
+      let phone: string | undefined
+
+      if (pin.place_id) {
+        const res = await fetch(`https://places.googleapis.com/v1/places/${pin.place_id}`, {
+          headers: {
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask': 'formattedAddress,internationalPhoneNumber'
+          }
+        })
+        const data = await res.json()
+        address = data.formattedAddress
+        phone = data.internationalPhoneNumber
+      } else {
+        const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask': 'places.formattedAddress,places.internationalPhoneNumber'
+          },
+          body: JSON.stringify({
+            textQuery: pin.name,
+            locationBias: {
+              circle: {
+                center: { latitude: pin.lat, longitude: pin.lng },
+                radius: 300
+              }
+            }
+          })
+        })
+        const data = await res.json()
+        const match = (data.places ?? [])[0]
+        address = match?.formattedAddress
+        phone = match?.internationalPhoneNumber
+      }
+
+      setPlaceDetails(address || phone ? { address, phone } : null)
+    } catch (err) {
+      console.error('Place details lookup failed', err)
+      setPlaceDetails(null)
+    } finally {
+      setLoadingDetails(false)
+    }
+  }
+
+  // Pin deletion: RLS mirrors E5 (full edit rights for every trip member,
+  // no owner/contributor tiers) — same "trip member" check used for
+  // viewing/adding pins, see migration 003.
+  async function deleteSelectedPin() {
+    if (!selectedPin) return
+    setDeletingPin(true)
+    const { error } = await supabase.from('pins').delete().eq('id', selectedPin.id)
+    setDeletingPin(false)
+    if (error) {
+      console.error('Failed to delete pin', error)
+      return
+    }
+    setSelectedPin(null)
+    setConfirmingDelete(false)
+    loadPins()
+  }
 
   // Uses Places API (New) — Nearby Search, per E26.
   async function loadNearbyEats(pin: Pin) {
@@ -496,7 +614,54 @@ export default function MapView({ tripId }: Props) {
 
           {!draftPin && selectedPin && (
             <>
-              <p className={styles.sidebarTitle}>near {selectedPin.name}</p>
+              <div className={styles.placeDetails}>
+                <div className={styles.placeNameRow}>
+                  <p className={styles.placeName}>{selectedPin.name}</p>
+                  {!confirmingDelete && (
+                    <button
+                      type="button"
+                      className={styles.deleteButton}
+                      title="delete pin"
+                      aria-label="delete pin"
+                      onClick={() => setConfirmingDelete(true)}
+                      dangerouslySetInnerHTML={{ __html: TRASH_ICON }}
+                    />
+                  )}
+                  {confirmingDelete && (
+                    <div className={styles.deleteConfirm}>
+                      <span>delete?</span>
+                      <button
+                        type="button"
+                        className={styles.deleteConfirmYes}
+                        onClick={deleteSelectedPin}
+                        disabled={deletingPin}
+                      >
+                        {deletingPin ? '…' : 'yes'}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.deleteConfirmNo}
+                        onClick={() => setConfirmingDelete(false)}
+                        disabled={deletingPin}
+                      >
+                        no
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {loadingDetails && <p className={styles.hint}>looking up details…</p>}
+                {!loadingDetails && placeDetails?.address && (
+                  <p className={styles.placeAddress}>{placeDetails.address}</p>
+                )}
+                {!loadingDetails && placeDetails?.phone && (
+                  <p className={styles.placePhone}>{placeDetails.phone}</p>
+                )}
+                {!loadingDetails && !placeDetails && (
+                  <p className={styles.hint}>no additional details found</p>
+                )}
+              </div>
+
+              <p className={styles.sidebarTitle}>nearby eats</p>
               {loadingEats && <p className={styles.hint}>looking for restaurants…</p>}
               {!loadingEats && nearbyEats.length === 0 && (
                 <p className={styles.hint}>no restaurants found nearby</p>
@@ -508,6 +673,33 @@ export default function MapView({ tripId }: Props) {
               ))}
             </>
           )}
+
+          {/* Always visible in this panel, regardless of the draft-pin
+              form or nearby-eats state above — a running list of every
+              pin on this trip, tap to select + pan/zoom the map to it. */}
+          <div className={styles.pinnedSection}>
+            <p className={styles.sidebarTitle}>pinned ({pins.length})</p>
+            {pins.length === 0 && <p className={styles.hint}>no pins yet</p>}
+            {pins.length > 0 && (
+              <div className={styles.pinnedList}>
+                {pins.map(pin => {
+                  const cfg = categoryConfig(pin.category)
+                  return (
+                    <button
+                      key={pin.id}
+                      type="button"
+                      className={styles.pinnedRow}
+                      data-active={selectedPin?.id === pin.id}
+                      onClick={() => selectPin(pin)}
+                    >
+                      <span className={styles.pinnedDot} style={{ backgroundColor: cfg.color }} />
+                      <span className={styles.pinnedName}>{pin.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </aside>
       </div>
     </div>
