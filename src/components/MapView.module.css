@@ -290,7 +290,22 @@
 .pinnedList {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+}
+
+.pinnedGroup {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
+}
+
+.pinnedGroupLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 0 0 2px 4px;
 }
 
 .pinnedRow {
@@ -330,8 +345,8 @@
 }
 
 .pinMarker {
-  width: 44px;
-  height: 44px;
+  width: 25px;
+  height: 25px;
   cursor: pointer;
 }
 
@@ -339,8 +354,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 25px;
+  height: 25px;
   background: #fff;
   border-radius: 50% 50% 50% 0;
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -352,8 +367,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
 }
 
@@ -395,6 +410,35 @@
 .categoryDot {
   width: 8px;
   height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.iconPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -6px 0 14px;
+}
+
+.iconPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 3px 10px 3px 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.iconPillBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -521,6 +565,16 @@
   .categoryPill {
     padding: 7px 12px 7px 8px;
     font-size: 12px;
+  }
+
+  .iconPill {
+    padding: 5px 12px 5px 5px;
+    font-size: 12px;
+  }
+
+  .iconPillBadge {
+    width: 24px;
+    height: 24px;
   }
 
   .draftConfirm,

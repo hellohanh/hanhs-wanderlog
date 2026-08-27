@@ -145,13 +145,6 @@
   min-height: 320px;
 }
 
-.placeholder {
-  color: var(--text-muted);
-  font-size: 14px;
-  padding: 40px 0;
-  text-align: center;
-}
-
 @media (max-width: 640px) {
   .page {
     padding: 12px;

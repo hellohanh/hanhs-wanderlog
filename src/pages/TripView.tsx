@@ -6,14 +6,11 @@ import MapView from '../components/MapView'
 import ItineraryView from '../components/ItineraryView'
 import styles from './TripView.module.css'
 
-type Tab = 'map' | 'itinerary' | 'budget' | 'packing' | 'notes'
+type Tab = 'map' | 'itinerary'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'map', label: 'map' },
-  { key: 'itinerary', label: 'itinerary' },
-  { key: 'budget', label: 'budget' },
-  { key: 'packing', label: 'packing' },
-  { key: 'notes', label: 'notes' }
+  { key: 'itinerary', label: 'itinerary' }
 ]
 
 export default function TripView() {
@@ -164,15 +161,6 @@ export default function TripView() {
       <div className={styles.content}>
         {activeTab === 'map' && <MapView tripId={tripId} />}
         {activeTab === 'itinerary' && trip && <ItineraryView tripId={tripId} trip={trip} />}
-        {activeTab === 'budget' && (
-          <p className={styles.placeholder}>budget tracking — coming soon</p>
-        )}
-        {activeTab === 'packing' && (
-          <p className={styles.placeholder}>packing list — coming soon</p>
-        )}
-        {activeTab === 'notes' && (
-          <p className={styles.placeholder}>notes — coming soon</p>
-        )}
       </div>
     </div>
   )

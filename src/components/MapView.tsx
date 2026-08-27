@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { loadGoogleMaps } from '../lib/googleMapsLoader'
-import { CATEGORIES, ICON_SVGS, categoryConfig, type PinCategory } from '../lib/pinCategories'
+import { CATEGORIES, ICON_VARIANTS, categoryConfig, groupPinsByCategory, pinIconSvg, type PinCategory } from '../lib/pinCategories'
 import type { Pin } from '../types'
 import styles from './MapView.module.css'
 
@@ -22,6 +22,7 @@ interface DraftPin {
   name: string
   category: PinCategory
   placeId?: string
+  icon?: string
 }
 
 interface PlaceDetails {
@@ -67,8 +68,12 @@ function getPinOverlayClass() {
         const point = this.getProjection()?.fromLatLngToDivPixel(this.position)
         if (point) {
           this.el.style.position = 'absolute'
-          this.el.style.left = `${point.x - 22}px`
-          this.el.style.top = `${point.y - 44}px`
+          // Offsets track the marker's actual size (25x25, see .pinMarker in
+          // MapView.module.css): half the width to center horizontally, the
+          // full height to anchor the teardrop's bottom point at the pin's
+          // lat/lng. Keep these two in sync if the marker size ever changes.
+          this.el.style.left = `${point.x - 12.5}px`
+          this.el.style.top = `${point.y - 25}px`
         }
       }
 
@@ -97,6 +102,7 @@ export default function MapView({ tripId }: Props) {
   const [deletingPin, setDeletingPin] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [editNameValue, setEditNameValue] = useState('')
+  const [editIconValue, setEditIconValue] = useState<string | undefined>(undefined)
   const [savingName, setSavingName] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -188,7 +194,8 @@ export default function MapView({ tripId }: Props) {
     lat: number,
     lng: number,
     category: PinCategory,
-    placeId?: string
+    placeId?: string,
+    icon?: string
   ) {
     const { data: userData } = await supabase.auth.getUser()
     const addedBy = userData.user?.id
@@ -200,6 +207,7 @@ export default function MapView({ tripId }: Props) {
       lat,
       lng,
       place_id: placeId ?? null,
+      icon: icon ?? null,
       added_by: addedBy
     })
 
@@ -243,7 +251,14 @@ export default function MapView({ tripId }: Props) {
 
   async function confirmDraftPin() {
     if (!draftPin || !draftPin.name.trim()) return
-    await createPin(draftPin.name.trim(), draftPin.lat, draftPin.lng, draftPin.category, draftPin.placeId)
+    await createPin(
+      draftPin.name.trim(),
+      draftPin.lat,
+      draftPin.lng,
+      draftPin.category,
+      draftPin.placeId,
+      draftPin.icon
+    )
     setDraftPin(null)
   }
 
@@ -308,7 +323,7 @@ export default function MapView({ tripId }: Props) {
       el.innerHTML = `
         <span class="${styles.pinOuter}">
           <span class="${styles.pinInner}" style="background:${cfg.color}">
-            <span class="${styles.pinIconWrap}">${ICON_SVGS[pin.category]}</span>
+            <span class="${styles.pinIconWrap}">${pinIconSvg(pin.category, pin.icon)}</span>
           </span>
         </span>
       `
@@ -428,25 +443,30 @@ export default function MapView({ tripId }: Props) {
   function startEditName(pin: Pin) {
     setConfirmingDelete(false)
     setEditNameValue(pin.name)
+    setEditIconValue(pin.icon ?? undefined)
     setEditingName(true)
   }
 
-  // Renaming requires an UPDATE grant + RLS policy on pins — neither
-  // existed before this feature (pins previously only had select/insert,
-  // then delete as of migration 003). Same E5 "any trip member can edit"
+  // Renaming (and, for categories with icon variants, re-icon-ing)
+  // requires an UPDATE grant + RLS policy on pins — neither existed
+  // before this feature (pins previously only had select/insert, then
+  // delete as of migration 003). Same E5 "any trip member can edit"
   // check as everywhere else, added via migration 004.
   async function saveEditName() {
     if (!selectedPin) return
     const trimmed = editNameValue.trim()
     if (!trimmed) return
     setSavingName(true)
-    const { error } = await supabase.from('pins').update({ name: trimmed }).eq('id', selectedPin.id)
+    const { error } = await supabase
+      .from('pins')
+      .update({ name: trimmed, icon: editIconValue ?? null })
+      .eq('id', selectedPin.id)
     setSavingName(false)
     if (error) {
       console.error('Failed to rename pin', error)
       return
     }
-    setSelectedPin({ ...selectedPin, name: trimmed })
+    setSelectedPin({ ...selectedPin, name: trimmed, icon: editIconValue ?? null })
     setEditingName(false)
     loadPins()
   }
@@ -587,13 +607,20 @@ export default function MapView({ tripId }: Props) {
                         ? { borderColor: cat.color, color: cat.color, fontWeight: 500 }
                         : undefined
                     }
-                    onClick={() => setDraftPin({ ...draftPin, category: cat.key })}
+                    onClick={() => setDraftPin({ ...draftPin, category: cat.key, icon: undefined })}
                   >
                     <span className={styles.categoryDot} style={{ backgroundColor: cat.color }} />
                     {cat.label}
                   </button>
                 ))}
               </div>
+              {ICON_VARIANTS[draftPin.category] && (
+                <IconPicker
+                  category={draftPin.category}
+                  selected={draftPin.icon}
+                  onSelect={key => setDraftPin({ ...draftPin, icon: key })}
+                />
+              )}
               <div className={styles.draftActions}>
                 <button
                   className={styles.draftConfirm}
@@ -691,6 +718,13 @@ export default function MapView({ tripId }: Props) {
                     </div>
                   )}
                 </div>
+                {editingName && ICON_VARIANTS[selectedPin.category] && (
+                  <IconPicker
+                    category={selectedPin.category}
+                    selected={editIconValue}
+                    onSelect={key => setEditIconValue(key)}
+                  />
+                )}
                 {loadingDetails && <p className={styles.hint}>looking up details…</p>}
                 {!loadingDetails && placeDetails?.address && (
                   <p className={styles.placeAddress}>{placeDetails.address}</p>
@@ -724,26 +758,69 @@ export default function MapView({ tripId }: Props) {
             {pins.length === 0 && <p className={styles.hint}>no pins yet</p>}
             {pins.length > 0 && (
               <div className={styles.pinnedList}>
-                {pins.map(pin => {
-                  const cfg = categoryConfig(pin.category)
-                  return (
-                    <button
-                      key={pin.id}
-                      type="button"
-                      className={styles.pinnedRow}
-                      data-active={selectedPin?.id === pin.id}
-                      onClick={() => selectPin(pin)}
-                    >
-                      <span className={styles.pinnedDot} style={{ backgroundColor: cfg.color }} />
-                      <span className={styles.pinnedName}>{pin.name}</span>
-                    </button>
-                  )
-                })}
+                {groupPinsByCategory(pins).map(group => (
+                  <div key={group.key} className={styles.pinnedGroup}>
+                    <p className={styles.pinnedGroupLabel}>{group.label}</p>
+                    {group.pins.map(pin => (
+                      <button
+                        key={pin.id}
+                        type="button"
+                        className={styles.pinnedRow}
+                        data-active={selectedPin?.id === pin.id}
+                        onClick={() => selectPin(pin)}
+                      >
+                        <span className={styles.pinnedDot} style={{ backgroundColor: group.color }} />
+                        <span className={styles.pinnedName}>{pin.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </aside>
       </div>
+    </div>
+  )
+}
+
+// Shared between the "new pin" draft form and the pencil-triggered edit
+// form — only rendered for categories with more than a plain default
+// icon (see ICON_VARIANTS). `selected` undefined/unset means "category
+// default", shown as the first ("general") option being active.
+function IconPicker({
+  category,
+  selected,
+  onSelect
+}: {
+  category: PinCategory
+  selected: string | undefined
+  onSelect: (key: string | undefined) => void
+}) {
+  const variants = ICON_VARIANTS[category]
+  if (!variants) return null
+  const cfg = categoryConfig(category)
+
+  return (
+    <div className={styles.iconPicker}>
+      {variants.map(variant => {
+        const isActive = (selected ?? 'general') === variant.key
+        return (
+          <button
+            key={variant.key}
+            type="button"
+            className={styles.iconPill}
+            style={isActive ? { borderColor: cfg.color, color: cfg.color, fontWeight: 500 } : undefined}
+            title={variant.label}
+            onClick={() => onSelect(variant.key === 'general' ? undefined : variant.key)}
+          >
+            <span className={styles.iconPillBadge} style={{ backgroundColor: cfg.color }}>
+              <span dangerouslySetInnerHTML={{ __html: variant.svg }} />
+            </span>
+            {variant.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

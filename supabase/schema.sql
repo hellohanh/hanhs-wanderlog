@@ -54,6 +54,7 @@ create table pins (
   lng double precision not null,
   notes text,
   place_id text,
+  icon text,
   added_by uuid references auth.users(id),
   created_at timestamptz default now()
 );
@@ -84,11 +85,30 @@ create table itinerary_stops (
   created_at timestamptz default now()
 );
 
+-- Added in migration 007 (Session 15) — flight/train/bus/personal
+-- travel-day cards, shown in their own section above a day's stops.
+-- No live status/tracking (out of scope, E9) — from_time/to_time are
+-- user-entered, not live data.
+create table travel_legs (
+  id uuid primary key default gen_random_uuid(),
+  itinerary_day_id uuid references itinerary_days(id) on delete cascade,
+  mode text not null check (mode in ('flight', 'train', 'bus', 'personal')),
+  carrier text,
+  reference text,
+  from_location text not null,
+  from_time time,
+  to_location text not null,
+  to_time time,
+  order_index int not null default 0,
+  created_at timestamptz default now()
+);
+
 alter table trips enable row level security;
 alter table pins enable row level security;
 alter table trip_members enable row level security;
 alter table itinerary_days enable row level security;
 alter table itinerary_stops enable row level security;
+alter table travel_legs enable row level security;
 
 -- Row Level Security policies (below) control WHICH rows a role can
 -- see or touch, but Postgres separately requires base GRANT
@@ -101,6 +121,7 @@ grant select, insert, delete, update on pins to authenticated;
 grant select on trip_members to authenticated;
 grant select, insert, update, delete on itinerary_days to authenticated;
 grant select, insert, update, delete on itinerary_stops to authenticated;
+grant select, insert, update, delete on travel_legs to authenticated;
 
 -- Per E5 (SKILL.md): every invited member gets full edit rights,
 -- no owner/contributor permission tiers.
@@ -279,6 +300,65 @@ create policy "trip members can delete itinerary stops"
       select 1 from itinerary_days
       join trips on trips.id = itinerary_days.trip_id
       where itinerary_days.id = itinerary_stops.itinerary_day_id
+      and (
+        trips.owner_id = auth.uid()
+        or exists (select 1 from trip_members where trip_id = trips.id and user_id = auth.uid())
+      )
+    )
+  );
+
+-- Travel legs (added migration 007, Session 15) — same join-through-
+-- itinerary_days pattern as itinerary_stops above.
+
+create policy "trip members can view travel legs"
+  on travel_legs for select
+  using (
+    exists (
+      select 1 from itinerary_days
+      join trips on trips.id = itinerary_days.trip_id
+      where itinerary_days.id = travel_legs.itinerary_day_id
+      and (
+        trips.owner_id = auth.uid()
+        or exists (select 1 from trip_members where trip_id = trips.id and user_id = auth.uid())
+      )
+    )
+  );
+
+create policy "trip members can add travel legs"
+  on travel_legs for insert
+  with check (
+    exists (
+      select 1 from itinerary_days
+      join trips on trips.id = itinerary_days.trip_id
+      where itinerary_days.id = travel_legs.itinerary_day_id
+      and (
+        trips.owner_id = auth.uid()
+        or exists (select 1 from trip_members where trip_id = trips.id and user_id = auth.uid())
+      )
+    )
+  );
+
+create policy "trip members can update travel legs"
+  on travel_legs for update
+  using (
+    exists (
+      select 1 from itinerary_days
+      join trips on trips.id = itinerary_days.trip_id
+      where itinerary_days.id = travel_legs.itinerary_day_id
+      and (
+        trips.owner_id = auth.uid()
+        or exists (select 1 from trip_members where trip_id = trips.id and user_id = auth.uid())
+      )
+    )
+  );
+
+create policy "trip members can delete travel legs"
+  on travel_legs for delete
+  using (
+    exists (
+      select 1 from itinerary_days
+      join trips on trips.id = itinerary_days.trip_id
+      where itinerary_days.id = travel_legs.itinerary_day_id
       and (
         trips.owner_id = auth.uid()
         or exists (select 1 from trip_members where trip_id = trips.id and user_id = auth.uid())

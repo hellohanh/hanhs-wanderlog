@@ -1,0 +1,21 @@
+-- Migration 006: add icon to pins
+-- Session 14 — non-destructive, does NOT touch existing rows.
+-- Per L10 (SKILL.md): schema.sql itself must never be re-run against a
+-- database with real data — migrations like this one are how schema
+-- changes get applied going forward instead.
+--
+-- Purpose: lets a pin use a specific icon variant within its category
+-- (e.g. Attraction: church, museum, temple; Dining: street food, BBQ,
+-- seafood) instead of always showing the category's plain default
+-- icon. Nullable — null means "use the category default", so every
+-- existing pin keeps its current look with no backfill needed.
+-- Variant keys and their SVGs live in src/lib/pinCategories.ts
+-- (ICON_VARIANTS), not in the database — this column just stores which
+-- key was picked. No RLS/grant change needed: the existing
+-- select/insert/update policies on pins already cover this column.
+--
+-- Status: provided to the user in chat during this session — not yet
+-- confirmed run against the live Supabase project as of this file's
+-- creation. Confirm/update this note once applied.
+
+alter table pins add column if not exists icon text;

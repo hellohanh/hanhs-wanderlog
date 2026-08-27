@@ -18,6 +18,7 @@ export interface Pin {
   lng: number
   notes: string | null
   place_id: string | null
+  icon: string | null
   added_by: string
   created_at: string
 }
@@ -36,6 +37,21 @@ export interface ItineraryStop {
   order_index: number
   start_time: string | null
   end_time: string | null
+}
+
+export type TravelMode = 'flight' | 'train' | 'bus' | 'personal'
+
+export interface TravelLeg {
+  id: string
+  itinerary_day_id: string
+  mode: TravelMode
+  carrier: string | null
+  reference: string | null
+  from_location: string
+  from_time: string | null
+  to_location: string
+  to_time: string | null
+  order_index: number
 }
 
 export interface BudgetItem {

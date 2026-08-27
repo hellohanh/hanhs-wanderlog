@@ -51,11 +51,193 @@
   font-size: 13px;
 }
 
+/* ---- Travel header row: chips + add + map toggle ---- */
+
+.travelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.travelChipsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.travelLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.travelChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 5px 10px 5px 6px;
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.travelChipIcon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.addTravelButton {
+  border: 1px dashed var(--border-strong);
+  background: none;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.mapToggleButton {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ---- Main split: timeline + pinned column ---- */
+
+.dayContent {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.timelineWrapper {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.timelineScroll {
+  max-height: 640px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.timelineTrack {
+  position: relative;
+}
+
+.hourRow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.hourLabel {
+  width: 56px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px 0 0;
+  text-align: right;
+}
+
+.halfHourLine {
+  flex: 1;
+  border-left: 1px solid var(--border);
+  position: relative;
+}
+
+.halfHourLine::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--border);
+}
+
+.timelineBlock {
+  position: absolute;
+  left: 60px;
+  right: 8px;
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: white;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.timelineBlockIcon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.timelineBlockName {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.timelineBlockTime {
+  flex-shrink: 0;
+  opacity: 0.9;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.dragPreviewBlock {
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* ---- Pinned column (right) ---- */
+
+.poolColumn {
+  min-width: 0;
+}
+
 .poolSection {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px 12px;
   background: var(--surface-1);
+  max-height: 640px;
+  overflow-y: auto;
 }
 
 .poolLabel {
@@ -65,11 +247,31 @@
   margin: 0 0 8px;
 }
 
+.poolGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.poolGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.poolGroupLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
 .poolList {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-height: 32px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .poolChip {
@@ -92,6 +294,14 @@
   flex-shrink: 0;
 }
 
+.poolChip span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .quickAddButton {
   flex-shrink: 0;
   border: none;
@@ -110,72 +320,70 @@
   color: var(--accent-text-on-light);
 }
 
-.dayContent {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  gap: 16px;
+/* ---- Popups: stop-time editor, travel-leg form, mini map ---- */
+
+.popupBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
 }
 
-.dayList {
+.popupCard {
+  background: var(--surface-1);
+  border-radius: 12px;
+  padding: 16px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.mapPopupCard {
+  background: var(--surface-1);
+  border-radius: 12px;
+  padding: 12px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;
-  min-height: 120px;
+  gap: 8px;
 }
 
-.stopRow {
+.popupCloseButton {
+  margin-left: auto;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.stopEditHeader {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px;
-  background: var(--surface-2);
+  margin-bottom: 10px;
 }
 
-.dragHandle {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  cursor: grab;
-  touch-action: none;
-  font-size: 15px;
-  padding: 2px;
-}
-
-.stopDot {
-  width: 9px;
-  height: 9px;
+.stopEditDot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.stopMain {
-  flex: 1;
-  min-width: 0;
-}
-
-.stopName {
-  font-size: 13px;
-  font-weight: 500;
-  margin: 0 0 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stopTimes {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.timeInput {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 2px 4px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--surface-1);
-  width: 92px;
+.stopEditName {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
 }
 
 .timeSep {
@@ -183,47 +391,115 @@
   color: var(--text-muted);
 }
 
-.removeButton {
-  flex-shrink: 0;
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  font-size: 17px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius);
-}
+/* ---- Travel leg form (shared by the popup) ---- */
 
-.removeButton:hover {
-  color: #C0392B;
-  background: var(--surface-1);
-}
-
-.segment {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 0 6px 22px;
-  font-size: 12px;
-  color: var(--text-muted);
-  min-height: 16px;
-}
-
-.mapPane {
+.travelForm {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
+.travelModePicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.travelModePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 4px 10px 4px 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.travelModeDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.travelFormRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.travelFormInput {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.travelFormTimeInput {
+  flex-shrink: 0;
+  width: 110px;
+  padding: 7px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.travelFormActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+.travelFormSave {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-text-on-fill);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.travelFormSave:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.travelFormCancel {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.travelFormDelete {
+  border: 1px solid #C0392B;
+  background: none;
+  color: #C0392B;
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  margin-left: auto;
+}
+
+/* ---- Map popup contents ---- */
+
 .modeToggle {
   display: flex;
   gap: 4px;
+  align-items: center;
 }
 
 .modeButton {
   border: 1px solid var(--border);
-  background: var(--surface-1);
+  background: var(--surface-2);
   color: var(--text-secondary);
   border-radius: var(--radius);
   padding: 4px 10px;
@@ -236,21 +512,44 @@
 }
 
 .miniMap {
-  flex: 1;
-  min-height: 220px;
+  min-height: 300px;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
 }
 
-/* ---- Mobile (≤768px): stack the day list and mini map ---- */
+.segmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.segmentRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 2px;
+  border-top: 1px solid var(--border);
+}
+
+.segmentTime {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+/* ---- Mobile (≤768px) ---- */
 @media (max-width: 768px) {
   .dayContent {
     grid-template-columns: 1fr;
   }
 
-  .miniMap {
-    min-height: 180px;
+  .timelineScroll {
+    max-height: 420px;
+  }
+
+  .poolSection {
+    max-height: 300px;
   }
 
   .poolChip {
@@ -258,22 +557,20 @@
     font-size: 13px;
   }
 
-  .stopRow {
-    padding: 12px 10px;
-  }
-
-  .dragHandle {
-    font-size: 17px;
-    padding: 6px;
-  }
-
-  .removeButton {
-    font-size: 20px;
-    padding: 6px;
-  }
-
-  .timeInput {
+  .travelFormInput,
+  .travelFormTimeInput {
     font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
-    width: 104px;
+  }
+
+  .travelFormRow {
+    flex-wrap: wrap;
+  }
+
+  .travelFormTimeInput {
+    width: 100%;
+  }
+
+  .mapPopupCard {
+    max-width: 100%;
   }
 }
