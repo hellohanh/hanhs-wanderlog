@@ -51,7 +51,13 @@
   font-size: 13px;
 }
 
-/* ---- Travel header row: chips + add + map toggle ---- */
+/* ---- Travel section: title + controls row + full cards ---- */
+
+.travelSectionTitle {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+}
 
 .travelHeader {
   display: flex;
@@ -59,44 +65,7 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-}
-
-.travelChipsRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.travelLabel {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.travelChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 5px 10px 5px 6px;
-  background: var(--surface-2);
-  font-size: 12px;
-  color: var(--text-primary);
-}
-
-.travelChipIcon {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  margin-bottom: 10px;
 }
 
 .addTravelButton {
@@ -119,6 +88,167 @@
   padding: 6px 10px;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.travelCardList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.travelCardFull {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 40px 12px 14px;
+  background: var(--surface-2);
+}
+
+.travelCardDuration {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  border-right: 1px solid var(--border);
+  padding-right: 14px;
+}
+
+.travelCardDurationHours {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.travelCardDurationMin {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  margin-top: 2px;
+}
+
+.travelCardMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.travelCardRoute {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.travelCardMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.travelCardTimes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.travelCardEndpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.travelCardLocation {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.travelCardDivider {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.travelCardDividerDots {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+.travelCardDividerPlane {
+  color: #7A0C2E;
+  font-size: 17px;
+  line-height: 1;
+  margin: 0 3px;
+}
+
+.travelCardDividerIcon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 2px;
+}
+
+.travelCardTimeValue {
+  font-weight: 500;
+}
+
+.travelCardTz {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+.travelCardDayOffset {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-text-on-light);
+  background: var(--accent-tint);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+.travelCardEditButton {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.travelCardEditButton:hover {
+  background: var(--surface-1);
+  color: var(--accent);
 }
 
 /* ---- Main split: timeline + pinned column ---- */
@@ -214,6 +344,25 @@
   opacity: 0.9;
   font-size: 11px;
   white-space: nowrap;
+}
+
+.timelineBlockContinues {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  text-align: right;
+}
+
+.timelineBlockContinuedFrom {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .dragPreviewBlock {
@@ -439,6 +588,51 @@
   font-size: 13px;
 }
 
+.autocompleteWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.autocompleteWrap .travelFormInput {
+  width: 100%;
+}
+
+.autocompleteList {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.autocompleteOption {
+  padding: 7px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.autocompleteOption[data-highlighted='true'] {
+  background: var(--accent-tint);
+}
+
+.autocompleteHint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.travelFormHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: -2px 0 0;
+}
+
 .travelFormTimeInput {
   flex-shrink: 0;
   width: 110px;
@@ -446,6 +640,37 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   font-size: 13px;
+}
+
+.travelFormDateInput {
+  flex-shrink: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--surface-1);
+}
+
+.timeSelectGroup {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.timeSelectPart {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 7px 4px;
+  font-size: 13px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+.timeSelectColon {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .travelFormActions {
@@ -544,6 +769,11 @@
     grid-template-columns: 1fr;
   }
 
+  .travelCardEditButton {
+    width: 32px;
+    height: 32px;
+  }
+
   .timelineScroll {
     max-height: 420px;
   }
@@ -558,7 +788,9 @@
   }
 
   .travelFormInput,
-  .travelFormTimeInput {
+  .travelFormTimeInput,
+  .travelFormDateInput,
+  .timeSelectPart {
     font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
   }
 

@@ -47,10 +47,15 @@ export interface TravelLeg {
   mode: TravelMode
   carrier: string | null
   reference: string | null
+  title: string | null
   from_location: string
+  from_date: string | null
   from_time: string | null
+  from_timezone: string | null
   to_location: string
+  to_date: string | null
   to_time: string | null
+  to_timezone: string | null
   order_index: number
 }
 

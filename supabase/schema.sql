@@ -95,10 +95,15 @@ create table travel_legs (
   mode text not null check (mode in ('flight', 'train', 'bus', 'personal')),
   carrier text,
   reference text,
+  title text,
   from_location text not null,
+  from_date date,
   from_time time,
+  from_timezone text,
   to_location text not null,
+  to_date date,
   to_time time,
+  to_timezone text,
   order_index int not null default 0,
   created_at timestamptz default now()
 );

@@ -28,12 +28,17 @@ type RouteMode = 'DRIVING' | 'WALKING' | 'TRANSIT'
 interface LegFormState {
   id?: string
   mode: LegMode
+  title: string
   carrier: string
   reference: string
   fromLocation: string
+  fromDate: string
   fromTime: string
+  fromTimezone: string
   toLocation: string
+  toDate: string
   toTime: string
+  toTimezone: string
 }
 
 // Icon + color per travel-leg mode, independent of the pin category
@@ -63,10 +68,373 @@ const LEG_MODE_CONFIG: Record<LegMode, { label: string; color: string; svg: stri
   }
 }
 
+// Curated airline list for the flight-mode carrier autocomplete. `value`
+// is what actually fills the carrier field on selection — a short,
+// commonly-typed form, chosen to match slugifyCarrier()'s output to a
+// real logo filename (see chat: e.g. "Delta" -> delta.png, not
+// "Delta Air Lines" -> delta-air-lines.png). `display` is only for the
+// dropdown label, so the full/official name is still visible there.
+const AIRLINES: { display: string; value: string }[] = [
+  { display: 'American Airlines', value: 'American Airlines' },
+  { display: 'Delta Air Lines', value: 'Delta' },
+  { display: 'United Airlines', value: 'United Airlines' },
+  { display: 'Southwest Airlines', value: 'Southwest Airlines' },
+  { display: 'Alaska Airlines', value: 'Alaska Airlines' },
+  { display: 'JetBlue Airways', value: 'JetBlue' },
+  { display: 'Hawaiian Airlines', value: 'Hawaiian Airlines' },
+  { display: 'Air Canada', value: 'Air Canada' },
+  { display: 'Aeroméxico', value: 'Aeroméxico' },
+  { display: 'British Airways', value: 'British Airways' },
+  { display: 'Lufthansa', value: 'Lufthansa' },
+  { display: 'Air France', value: 'Air France' },
+  { display: 'KLM Royal Dutch Airlines', value: 'KLM' },
+  { display: 'Iberia', value: 'Iberia' },
+  { display: 'Swiss International Air Lines', value: 'Swiss' },
+  { display: 'Turkish Airlines', value: 'Turkish Airlines' },
+  { display: 'Scandinavian Airlines (SAS)', value: 'SAS' },
+  { display: 'Virgin Atlantic', value: 'Virgin Atlantic' },
+  { display: 'Emirates', value: 'Emirates' },
+  { display: 'Qatar Airways', value: 'Qatar Airways' },
+  { display: 'Etihad Airways', value: 'Etihad Airways' },
+  { display: 'Saudia', value: 'Saudia' },
+  { display: 'Singapore Airlines', value: 'Singapore Airlines' },
+  { display: 'ANA (All Nippon Airways)', value: 'ANA' },
+  { display: 'Japan Airlines (JAL)', value: 'JAL' },
+  { display: 'Korean Air', value: 'Korean Air' },
+  { display: 'Cathay Pacific', value: 'Cathay Pacific' },
+  { display: 'EVA Air', value: 'EVA Air' },
+  { display: 'Vietnam Airlines', value: 'Vietnam Airlines' },
+  { display: 'Qantas', value: 'Qantas' }
+]
+
+// Curated major-airport list for the flight-mode from/to picker.
+// Selecting one fills BOTH the location field (as "City / CODE", same
+// format the old free-text placeholder suggested) and the timezone
+// field in one step — the real fix for the duration bug: a picked
+// airport always has a valid IANA timezone, so there's no way to end
+// up with typed-but-not-selected text that Intl can't resolve.
+interface Airport {
+  code: string
+  city: string
+  timezone: string
+}
+
+const AIRPORTS: Airport[] = [
+  { code: 'ATL', city: 'Atlanta', timezone: 'America/New_York' },
+  { code: 'JFK', city: 'New York', timezone: 'America/New_York' },
+  { code: 'LGA', city: 'New York', timezone: 'America/New_York' },
+  { code: 'EWR', city: 'Newark', timezone: 'America/New_York' },
+  { code: 'BOS', city: 'Boston', timezone: 'America/New_York' },
+  { code: 'PHL', city: 'Philadelphia', timezone: 'America/New_York' },
+  { code: 'MIA', city: 'Miami', timezone: 'America/New_York' },
+  { code: 'DTW', city: 'Detroit', timezone: 'America/New_York' },
+  { code: 'ORD', city: 'Chicago', timezone: 'America/Chicago' },
+  { code: 'DFW', city: 'Dallas', timezone: 'America/Chicago' },
+  { code: 'IAH', city: 'Houston', timezone: 'America/Chicago' },
+  { code: 'AUS', city: 'Austin', timezone: 'America/Chicago' },
+  { code: 'MSP', city: 'Minneapolis', timezone: 'America/Chicago' },
+  { code: 'DEN', city: 'Denver', timezone: 'America/Denver' },
+  { code: 'PHX', city: 'Phoenix', timezone: 'America/Phoenix' },
+  { code: 'LAX', city: 'Los Angeles', timezone: 'America/Los_Angeles' },
+  { code: 'SFO', city: 'San Francisco', timezone: 'America/Los_Angeles' },
+  { code: 'SAN', city: 'San Diego', timezone: 'America/Los_Angeles' },
+  { code: 'SEA', city: 'Seattle', timezone: 'America/Los_Angeles' },
+  { code: 'LAS', city: 'Las Vegas', timezone: 'America/Los_Angeles' },
+  { code: 'HNL', city: 'Honolulu', timezone: 'Pacific/Honolulu' },
+  { code: 'ANC', city: 'Anchorage', timezone: 'America/Anchorage' },
+  { code: 'YYZ', city: 'Toronto', timezone: 'America/Toronto' },
+  { code: 'YVR', city: 'Vancouver', timezone: 'America/Vancouver' },
+  { code: 'MEX', city: 'Mexico City', timezone: 'America/Mexico_City' },
+  { code: 'LHR', city: 'London', timezone: 'Europe/London' },
+  { code: 'CDG', city: 'Paris', timezone: 'Europe/Paris' },
+  { code: 'FRA', city: 'Frankfurt', timezone: 'Europe/Berlin' },
+  { code: 'MAD', city: 'Madrid', timezone: 'Europe/Madrid' },
+  { code: 'FCO', city: 'Rome', timezone: 'Europe/Rome' },
+  { code: 'AMS', city: 'Amsterdam', timezone: 'Europe/Amsterdam' },
+  { code: 'ZRH', city: 'Zurich', timezone: 'Europe/Zurich' },
+  { code: 'CPH', city: 'Copenhagen', timezone: 'Europe/Copenhagen' },
+  { code: 'IST', city: 'Istanbul', timezone: 'Europe/Istanbul' },
+  { code: 'DXB', city: 'Dubai', timezone: 'Asia/Dubai' },
+  { code: 'AUH', city: 'Abu Dhabi', timezone: 'Asia/Dubai' },
+  { code: 'DOH', city: 'Doha', timezone: 'Asia/Qatar' },
+  { code: 'JED', city: 'Jeddah', timezone: 'Asia/Riyadh' },
+  { code: 'SIN', city: 'Singapore', timezone: 'Asia/Singapore' },
+  { code: 'HKG', city: 'Hong Kong', timezone: 'Asia/Hong_Kong' },
+  { code: 'NRT', city: 'Tokyo', timezone: 'Asia/Tokyo' },
+  { code: 'HND', city: 'Tokyo', timezone: 'Asia/Tokyo' },
+  { code: 'ICN', city: 'Seoul', timezone: 'Asia/Seoul' },
+  { code: 'PVG', city: 'Shanghai', timezone: 'Asia/Shanghai' },
+  { code: 'TPE', city: 'Taipei', timezone: 'Asia/Taipei' },
+  { code: 'BKK', city: 'Bangkok', timezone: 'Asia/Bangkok' },
+  { code: 'KUL', city: 'Kuala Lumpur', timezone: 'Asia/Kuala_Lumpur' },
+  { code: 'CGK', city: 'Jakarta', timezone: 'Asia/Jakarta' },
+  { code: 'DEL', city: 'Delhi', timezone: 'Asia/Kolkata' },
+  { code: 'BOM', city: 'Mumbai', timezone: 'Asia/Kolkata' },
+  { code: 'SGN', city: 'Ho Chi Minh City', timezone: 'Asia/Ho_Chi_Minh' },
+  { code: 'HAN', city: 'Hanoi', timezone: 'Asia/Ho_Chi_Minh' },
+  { code: 'DAD', city: 'Da Nang', timezone: 'Asia/Ho_Chi_Minh' },
+  { code: 'CXR', city: 'Nha Trang (Cam Ranh)', timezone: 'Asia/Ho_Chi_Minh' },
+  { code: 'HUI', city: 'Hue', timezone: 'Asia/Ho_Chi_Minh' },
+  { code: 'PQC', city: 'Phu Quoc', timezone: 'Asia/Ho_Chi_Minh' },
+  { code: 'VCA', city: 'Can Tho', timezone: 'Asia/Ho_Chi_Minh' },
+  { code: 'SYD', city: 'Sydney', timezone: 'Australia/Sydney' },
+  { code: 'MEL', city: 'Melbourne', timezone: 'Australia/Melbourne' },
+  { code: 'AKL', city: 'Auckland', timezone: 'Pacific/Auckland' }
+]
+
+// Matches an airline/carrier's PNG logo, if the user has saved one —
+// see the folder/naming instructions given in chat. Slugified so
+// "Vietnam Airlines" -> "vietnam-airlines.png"; falls back to the
+// existing colored mode icon automatically if no matching file exists
+// (or none was ever saved), via the <img onError> in CarrierBadge
+// below. Uses BASE_URL like the rest of the app (see main.tsx,
+// TripView.tsx) so this also resolves correctly on GitHub Pages'
+// /hanhs-wanderlog/ subpath, not just localhost.
+function slugifyCarrier(carrier: string): string {
+  return carrier
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip accents (é -> e, ñ -> n, etc.)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function carrierLogoPath(carrier: string): string {
+  return `${import.meta.env.BASE_URL}airlines/${slugifyCarrier(carrier)}.png`
+}
+
 interface Segment {
   distanceText: string
   durationText: string
 }
+
+// Split duration for the big "8h / 15 MIN" two-line display on a
+// travel card. When BOTH from_timezone and to_timezone are set, this
+// converts each wall-clock date+time to a real UTC instant (DST-aware,
+// via Intl) before diffing — a same-clock-frame subtraction is simply
+// wrong whenever departure and arrival are in different timezones
+// (e.g. Austin CST -> Los Angeles PST reads as 1h46m on the clock but
+// is really 3h46m elapsed). If either timezone is missing, falls back
+// to the old naive date+time diff (both sides parsed the same way, so
+// still self-consistent — just not timezone-corrected) so legs
+// created before this feature keep working with no backfill needed.
+function legDurationParts(leg: TravelLeg): { hours: number; minutes: number } | null {
+  if (!leg.from_time || !leg.to_time) return null
+  const fromDate = leg.from_date ?? leg.to_date ?? '2000-01-01'
+  const toDate = leg.to_date ?? leg.from_date ?? '2000-01-01'
+
+  let startMs: number | null
+  let endMs: number | null
+  if (leg.from_timezone && leg.to_timezone) {
+    startMs = zonedWallTimeToUtcMs(fromDate, leg.from_time, leg.from_timezone)
+    endMs = zonedWallTimeToUtcMs(toDate, leg.to_time, leg.to_timezone)
+  } else {
+    startMs = Date.parse(`${fromDate}T${leg.from_time}`)
+    endMs = Date.parse(`${toDate}T${leg.to_time}`)
+  }
+
+  if (startMs == null || endMs == null || Number.isNaN(startMs) || Number.isNaN(endMs)) return null
+  const totalMinutes = Math.round((endMs - startMs) / 60000)
+  if (totalMinutes <= 0) return null
+  return { hours: Math.floor(totalMinutes / 60), minutes: totalMinutes % 60 }
+}
+
+// The UTC offset (in minutes) a given IANA timezone actually has at a
+// specific instant — computed via Intl rather than a static table, so
+// it's correct across DST changes automatically.
+function utcOffsetMinutesAt(instant: Date, timeZone: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).formatToParts(instant)
+    const map: Record<string, string> = {}
+    parts.forEach(p => {
+      if (p.type !== 'literal') map[p.type] = p.value
+    })
+    let hour = parseInt(map.hour, 10)
+    if (hour === 24) hour = 0 // some engines report midnight as "24" with hour12:false
+    const asUtcMs = Date.UTC(Number(map.year), Number(map.month) - 1, Number(map.day), hour, Number(map.minute), Number(map.second))
+    return (asUtcMs - instant.getTime()) / 60000
+  } catch {
+    return null
+  }
+}
+
+// Converts a wall-clock "this is what the clock reads in timeZone" to
+// the real UTC instant it represents (ms since epoch). One correction
+// pass — accurate for virtually all real scheduling; only the exact
+// hour of a DST transition could be off by the transition size, which
+// is not worth a second pass for a personal trip-planning app.
+// Normalizes a time value to plain "HH:MM" — Postgres returns stored
+// times as "HH:MM:SS", but values fresh out of TimeSelect24 (before a
+// save+reload round-trip) are just "HH:MM". Every function below that
+// builds a date string from a time value goes through this first, so
+// it doesn't matter which shape it's handed.
+function normalizeTime(timeStr: string): string {
+  return timeStr.slice(0, 5)
+}
+
+function zonedWallTimeToUtcMs(dateStr: string, timeStr: string, timeZone: string): number | null {
+  const naiveUtcMs = Date.parse(`${dateStr}T${normalizeTime(timeStr)}:00Z`)
+  if (Number.isNaN(naiveUtcMs)) return null
+  const offsetMin = utcOffsetMinutesAt(new Date(naiveUtcMs), timeZone)
+  if (offsetMin == null) return null
+  return naiveUtcMs - offsetMin * 60000
+}
+
+// Short abbreviation ("CST", "PST") for display next to a time on the
+// card — best-effort, falls back to the bare offset if the engine
+// doesn't have a short name for that zone/date.
+function timezoneAbbreviation(timeZone: string, dateStr: string, timeStr: string): string | null {
+  try {
+    const instant = new Date(`${dateStr}T${normalizeTime(timeStr)}:00`)
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(instant)
+    return parts.find(p => p.type === 'timeZoneName')?.value ?? null
+  } catch {
+    return null
+  }
+}
+
+// Full IANA timezone list for the searchable picker, via the runtime
+// when available (Intl.supportedValuesOf — supported in all current
+// browsers as of this app's build). Small fallback list covers the
+// rare case it's missing, so the picker never comes up completely
+// empty.
+const FALLBACK_TIMEZONES = [
+  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Anchorage', 'Pacific/Honolulu', 'America/Toronto', 'America/Vancouver',
+  'America/Mexico_City', 'America/Sao_Paulo', 'America/Bogota',
+  'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid', 'Europe/Rome',
+  'Europe/Amsterdam', 'Europe/Zurich', 'Europe/Istanbul', 'Europe/Moscow',
+  'Africa/Cairo', 'Africa/Johannesburg', 'Asia/Dubai', 'Asia/Riyadh',
+  'Asia/Karachi', 'Asia/Kolkata', 'Asia/Dhaka', 'Asia/Bangkok', 'Asia/Ho_Chi_Minh',
+  'Asia/Jakarta', 'Asia/Singapore', 'Asia/Hong_Kong', 'Asia/Shanghai',
+  'Asia/Taipei', 'Asia/Seoul', 'Asia/Tokyo', 'Australia/Perth', 'Australia/Sydney',
+  'Pacific/Auckland', 'UTC'
+]
+
+const ALL_TIMEZONES: string[] =
+  typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : FALLBACK_TIMEZONES
+
+// Whole-day offset between arrival and departure dates (0 for a
+// same-day leg, 1 for "arrives the next day", etc.) — shown as a
+// small "+N" badge next to the arrival time, the same convention most
+// flight-tracker UIs use for overnight/international legs.
+function legDayOffset(leg: TravelLeg): number | null {
+  if (!leg.from_date || !leg.to_date) return null
+  const from = new Date(`${leg.from_date}T00:00:00`)
+  const to = new Date(`${leg.to_date}T00:00:00`)
+  const days = Math.round((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000))
+  return days > 0 ? days : null
+}
+
+// Shared top/height math for a normal (departure-day) leg block and a
+// continuation block — pulled out so the column-overlap layout below
+// computes intervals identically to what each block actually renders,
+// rather than a second, potentially-diverging copy of the same logic.
+function legBlockGeometry(leg: TravelLeg): { top: number; height: number; crossesMidnight: boolean } {
+  const start = timeToMinutes(leg.from_time) ?? 0
+  const endRaw = timeToMinutes(leg.to_time)
+  const dayOffset = legDayOffset(leg)
+  const naiveHeightMin = endRaw != null ? endRaw - start : DEFAULT_DURATION_MIN
+  const crossesMidnight = naiveHeightMin <= 0 || (dayOffset != null && dayOffset > 0)
+  const heightMin = crossesMidnight ? DAY_MINUTES - start : naiveHeightMin
+  return { top: (start / 60) * HOUR_PX, height: Math.max(MIN_BLOCK_PX, (heightMin / 60) * HOUR_PX), crossesMidnight }
+}
+
+function continuationBlockGeometry(leg: TravelLeg): { top: number; height: number } {
+  const end = timeToMinutes(leg.to_time) ?? DEFAULT_DURATION_MIN
+  return { top: 0, height: Math.max(MIN_BLOCK_PX, (end / 60) * HOUR_PX) }
+}
+
+interface ColumnLayout {
+  col: number
+  cols: number
+}
+
+// Side-by-side layout for overlapping leg blocks (the two-family-units
+// case — two flights at genuinely different times don't need this,
+// but concurrent ones do). Groups items into clusters of mutually
+// overlapping blocks (by vertical top/height, matching what's actually
+// on screen), then greedily assigns each cluster's items to the fewest
+// columns such that no two overlapping items share a column — the same
+// approach a calendar day-view uses for concurrent events. Items
+// outside any overlap get a lone column (full width).
+function computeColumnLayout(items: { id: string; top: number; height: number }[]): Map<string, ColumnLayout> {
+  const result = new Map<string, ColumnLayout>()
+  const sorted = [...items].sort((a, b) => a.top - b.top)
+
+  let cluster: { id: string; top: number; end: number }[] = []
+  let clusterEnd = -Infinity
+
+  function flushCluster() {
+    if (cluster.length === 0) return
+    const colEnds: number[] = []
+    const assignments: { id: string; col: number }[] = []
+    for (const item of cluster) {
+      let placedCol = -1
+      for (let c = 0; c < colEnds.length; c++) {
+        if (colEnds[c] <= item.top) {
+          colEnds[c] = item.end
+          placedCol = c
+          break
+        }
+      }
+      if (placedCol === -1) {
+        colEnds.push(item.end)
+        placedCol = colEnds.length - 1
+      }
+      assignments.push({ id: item.id, col: placedCol })
+    }
+    const cols = colEnds.length
+    assignments.forEach(a => result.set(a.id, { col: a.col, cols }))
+    cluster = []
+  }
+
+  for (const item of sorted) {
+    const end = item.top + item.height
+    if (item.top >= clusterEnd) {
+      flushCluster()
+      clusterEnd = end
+    } else {
+      clusterEnd = Math.max(clusterEnd, end)
+    }
+    cluster.push({ id: item.id, top: item.top, end })
+  }
+  flushCluster()
+
+  return result
+}
+
+// Turns a column assignment into the actual left/width CSS for a
+// block — splits the space to the right of the hour-label gutter (see
+// .timelineBlock's default left: 60px / right: 8px) evenly across
+// however many columns its overlap cluster needs, with a small gap
+// between them. A lone (non-overlapping) block gets col 0 of 1 —
+// numerically the same as the old fixed left/right, just expressed as
+// left+width instead.
+function blockPositionStyle(layout: ColumnLayout | undefined): { left: string; width: string } {
+  const col = layout?.col ?? 0
+  const cols = layout?.cols ?? 1
+  const gap = 4
+  return {
+    left: `calc(60px + (100% - 68px) * ${col} / ${cols})`,
+    width: `calc((100% - 68px) / ${cols} - ${gap}px)`
+  }
+}
+
+const EDIT_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`
+
+const TIME_SELECT_HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const TIME_SELECT_MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
 
 // --- Time <-> minutes-of-day helpers, used throughout the timeline ---
 const HOUR_PX = 60
@@ -92,9 +460,7 @@ function minutesToTime(m: number): string {
 
 function minutesToLabel(m: number): string {
   const h = Math.floor(m / 60)
-  const suffix = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return `${h12}:00 ${suffix}`
+  return `${String(h).padStart(2, '0')}:00`
 }
 
 function snapMinutes(m: number): number {
@@ -125,7 +491,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
   const [pins, setPins] = useState<Pin[]>([])
   const [stops, setStops] = useState<StopWithPin[]>([])
-  const [travelLegs, setTravelLegs] = useState<TravelLeg[]>([])
+  const [allTravelLegs, setAllTravelLegs] = useState<TravelLeg[]>([])
   const [legForm, setLegForm] = useState<LegFormState | null>(null)
   const [savingLeg, setSavingLeg] = useState(false)
   const [editingStop, setEditingStop] = useState<StopWithPin | null>(null)
@@ -159,11 +525,9 @@ export default function ItineraryView({ tripId, trip }: Props) {
     setShowMapPopup(false)
     if (!selectedDayId) {
       setStops([])
-      setTravelLegs([])
       return
     }
     loadStops(selectedDayId)
-    loadTravelLegs(selectedDayId)
     // Reset scroll to the 7am default whenever the selected day changes.
     requestAnimationFrame(() => {
       timelineWrapperRef.current?.scrollTo({ top: SCROLL_TO_HOUR * HOUR_PX })
@@ -240,12 +604,14 @@ export default function ItineraryView({ tripId, trip }: Props) {
         .order('day_number')
       setDays(regenerated ?? [])
       setSelectedDayId(regenerated?.[0]?.id ?? null)
+      loadAllTravelLegs((regenerated ?? []).map(d => d.id))
       setLoadingDays(false)
       return
     }
 
     setDays(data ?? [])
     setSelectedDayId(prev => prev ?? data?.[0]?.id ?? null)
+    loadAllTravelLegs((data ?? []).map(d => d.id))
     setLoadingDays(false)
   }
 
@@ -264,6 +630,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
     }
     setDays(prev => [...prev, data])
     setSelectedDayId(data.id)
+    loadAllTravelLegs([...days.map(d => d.id), data.id])
   }
 
   async function loadPins() {
@@ -289,29 +656,47 @@ export default function ItineraryView({ tripId, trip }: Props) {
     setStops((data ?? []) as unknown as StopWithPin[])
   }
 
-  async function loadTravelLegs(dayId: string) {
+  async function loadAllTravelLegs(dayIds: string[]) {
+    if (dayIds.length === 0) {
+      setAllTravelLegs([])
+      return
+    }
     const { data, error } = await supabase
       .from('travel_legs')
       .select('*')
-      .eq('itinerary_day_id', dayId)
-      .order('order_index')
+      .in('itinerary_day_id', dayIds)
 
     if (error) {
       console.error('Failed to load travel legs', error)
       return
     }
-    setTravelLegs(data ?? [])
+    setAllTravelLegs(data ?? [])
+  }
+
+  // Refetches every leg across the whole trip (not just the selected
+  // day) — necessary because editing a leg on one day can change which
+  // OTHER day it shows a continuation block on (see continuationLegs
+  // below), so any single-day cache would go stale the moment a leg's
+  // to_date changes.
+  function refreshTravelLegs() {
+    loadAllTravelLegs(days.map(d => d.id))
   }
 
   function startAddLeg() {
+    const day = days.find(d => d.id === selectedDayId)
     setLegForm({
       mode: 'flight',
+      title: '',
       carrier: '',
       reference: '',
       fromLocation: '',
+      fromDate: day?.date ?? '',
       fromTime: '',
+      fromTimezone: '',
       toLocation: '',
-      toTime: ''
+      toDate: day?.date ?? '',
+      toTime: '',
+      toTimezone: ''
     })
   }
 
@@ -319,12 +704,17 @@ export default function ItineraryView({ tripId, trip }: Props) {
     setLegForm({
       id: leg.id,
       mode: leg.mode,
+      title: leg.title ?? '',
       carrier: leg.carrier ?? '',
       reference: leg.reference ?? '',
       fromLocation: leg.from_location,
+      fromDate: leg.from_date ?? '',
       fromTime: leg.from_time ?? '',
+      fromTimezone: leg.from_timezone ?? '',
       toLocation: leg.to_location,
-      toTime: leg.to_time ?? ''
+      toDate: leg.to_date ?? '',
+      toTime: leg.to_time ?? '',
+      toTimezone: leg.to_timezone ?? ''
     })
   }
 
@@ -336,12 +726,17 @@ export default function ItineraryView({ tripId, trip }: Props) {
     const payload = {
       itinerary_day_id: selectedDayId,
       mode: legForm.mode,
+      title: legForm.title.trim() || null,
       carrier: legForm.carrier.trim() || null,
       reference: legForm.reference.trim() || null,
       from_location: legForm.fromLocation.trim(),
+      from_date: legForm.fromDate || null,
       from_time: legForm.fromTime || null,
+      from_timezone: legForm.fromTimezone || null,
       to_location: legForm.toLocation.trim(),
-      to_time: legForm.toTime || null
+      to_date: legForm.toDate || null,
+      to_time: legForm.toTime || null,
+      to_timezone: legForm.toTimezone || null
     }
 
     const { error } = legForm.id
@@ -354,7 +749,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
       return
     }
     setLegForm(null)
-    loadTravelLegs(selectedDayId)
+    refreshTravelLegs()
   }
 
   async function deleteLeg(legId: string) {
@@ -365,7 +760,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
       return
     }
     setLegForm(null)
-    loadTravelLegs(selectedDayId)
+    refreshTravelLegs()
   }
 
   async function moveLegToTime(legId: string, newFromMin: number) {
@@ -385,7 +780,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
       console.error('Failed to move travel leg', error)
       return
     }
-    if (selectedDayId) loadTravelLegs(selectedDayId)
+    refreshTravelLegs()
   }
 
   // Quick-add (the "+" on a pool chip, no drag) needs a sensible default
@@ -631,6 +1026,21 @@ export default function ItineraryView({ tripId, trip }: Props) {
         .sort((a, b) => (timeToMinutes(a.start_time) ?? 0) - (timeToMinutes(b.start_time) ?? 0)),
     [stops]
   )
+  const selectedDay = useMemo(() => days.find(d => d.id === selectedDayId) ?? null, [days, selectedDayId])
+  // This day's own legs (it departed here) — used for the header chips,
+  // the "add travel" flow, and normal timeline blocks.
+  const travelLegs = useMemo(
+    () => allTravelLegs.filter(l => l.itinerary_day_id === selectedDayId),
+    [allTravelLegs, selectedDayId]
+  )
+  // Legs that departed on an EARLIER day but land on this one — the
+  // actual fix for "show the flight extended into tomorrow": these
+  // render as a separate continuation block from 00:00 to the arrival
+  // time, regardless of which day's itinerary_day_id they belong to.
+  const continuationLegs = useMemo(() => {
+    if (!selectedDay?.date) return []
+    return allTravelLegs.filter(l => l.to_date === selectedDay.date && l.from_date && l.from_date !== l.to_date)
+  }, [allTravelLegs, selectedDay])
   const timedLegs = useMemo(
     () =>
       [...travelLegs]
@@ -638,6 +1048,18 @@ export default function ItineraryView({ tripId, trip }: Props) {
         .sort((a, b) => (timeToMinutes(a.from_time) ?? 0) - (timeToMinutes(b.from_time) ?? 0)),
     [travelLegs]
   )
+  // Side-by-side columns for overlapping legs (e.g. two family units'
+  // flights around the same time) — computed once across BOTH normal
+  // and continuation blocks together, since a continuation block can
+  // overlap a same-day departure just as easily as two normal legs
+  // can overlap each other.
+  const legColumnLayout = useMemo(() => {
+    const items = [
+      ...continuationLegs.map(l => ({ id: l.id, ...continuationBlockGeometry(l) })),
+      ...timedLegs.map(l => ({ id: l.id, ...legBlockGeometry(l) }))
+    ]
+    return computeColumnLayout(items)
+  }, [continuationLegs, timedLegs])
 
   const activePin = activeDragId?.startsWith('pool-') ? pins.find(p => p.id === activeDragId.slice(5)) : undefined
   const activeStop = activeDragId?.startsWith('tstop-')
@@ -681,31 +1103,12 @@ export default function ItineraryView({ tripId, trip }: Props) {
 
         {days.length > 0 && (
           <>
+            <p className={styles.travelSectionTitle}>Travel</p>
+
             <div className={styles.travelHeader}>
-              <div className={styles.travelChipsRow}>
-                <p className={styles.travelLabel}>travel</p>
-                {travelLegs.map(leg => {
-                  const cfg = LEG_MODE_CONFIG[leg.mode]
-                  return (
-                    <button
-                      key={leg.id}
-                      type="button"
-                      className={styles.travelChip}
-                      onClick={() => startEditLeg(leg)}
-                    >
-                      <span className={styles.travelChipIcon} style={{ backgroundColor: cfg.color }}>
-                        <span dangerouslySetInnerHTML={{ __html: cfg.svg }} />
-                      </span>
-                      {leg.carrier || cfg.label}
-                      {leg.reference ? ` ${leg.reference}` : ''}
-                      {leg.from_time ? ` · ${leg.from_time.slice(0, 5)}` : ''}
-                    </button>
-                  )
-                })}
-                <button type="button" className={styles.addTravelButton} onClick={startAddLeg}>
-                  + add travel
-                </button>
-              </div>
+              <button type="button" className={styles.addTravelButton} onClick={startAddLeg}>
+                + add travel
+              </button>
               <button type="button" className={styles.mapToggleButton} onClick={() => setShowMapPopup(true)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 20l-5-2V6l5 2 6-2 5 2v12l-5-2-6 2z" />
@@ -716,11 +1119,21 @@ export default function ItineraryView({ tripId, trip }: Props) {
               </button>
             </div>
 
+            {travelLegs.length > 0 && (
+              <div className={styles.travelCardList}>
+                {travelLegs.map(leg => (
+                  <TravelCardFull key={leg.id} leg={leg} onEdit={() => startEditLeg(leg)} />
+                ))}
+              </div>
+            )}
+
             <div className={styles.dayContent}>
               <TimelineZone
                 scrollRef={timelineWrapperRef}
                 timedStops={timedStops}
                 timedLegs={timedLegs}
+                continuationLegs={continuationLegs}
+                legColumnLayout={legColumnLayout}
                 onStopClick={setEditingStop}
                 onLegClick={startEditLeg}
               />
@@ -821,6 +1234,46 @@ export default function ItineraryView({ tripId, trip }: Props) {
   )
 }
 
+// Native <input type="time"> follows OS/browser locale for its picker
+// UI — the lang="en-GB" trick to force 24-hour is unreliable in
+// practice (doesn't hold on every browser), so this is a plain pair of
+// HH/MM <select>s instead: always renders 24-hour, everywhere, no
+// locale dependency. value/onChange work with the same "HH:MM" string
+// (or "") used throughout — a real <input type="time">'s value shape.
+function TimeSelect24({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [h, m] = value ? value.split(':') : ['', '']
+
+  return (
+    <div className={styles.timeSelectGroup}>
+      <select
+        className={styles.timeSelectPart}
+        value={h}
+        onChange={e => onChange(e.target.value ? `${e.target.value}:${m || '00'}` : '')}
+      >
+        <option value="">--</option>
+        {TIME_SELECT_HOURS.map(hh => (
+          <option key={hh} value={hh}>
+            {hh}
+          </option>
+        ))}
+      </select>
+      <span className={styles.timeSelectColon}>:</span>
+      <select
+        className={styles.timeSelectPart}
+        value={m}
+        onChange={e => onChange(e.target.value ? `${h || '00'}:${e.target.value}` : '')}
+      >
+        <option value="">--</option>
+        {TIME_SELECT_MINUTES.map(mm => (
+          <option key={mm} value={mm}>
+            {mm}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 function TravelLegForm({
   form,
   saving,
@@ -856,13 +1309,24 @@ function TravelLegForm({
         })}
       </div>
 
+      <input
+        className={styles.travelFormInput}
+        placeholder="title (e.g. San Francisco to New York)"
+        value={form.title}
+        onChange={e => onChange({ ...form, title: e.target.value })}
+      />
+
       <div className={styles.travelFormRow}>
-        <input
-          className={styles.travelFormInput}
-          placeholder="carrier (e.g. Delta)"
-          value={form.carrier}
-          onChange={e => onChange({ ...form, carrier: e.target.value })}
-        />
+        {form.mode === 'flight' ? (
+          <AirlineCarrierInput value={form.carrier} onChange={carrier => onChange({ ...form, carrier })} />
+        ) : (
+          <input
+            className={styles.travelFormInput}
+            placeholder="carrier (e.g. Amtrak, Greyhound)"
+            value={form.carrier}
+            onChange={e => onChange({ ...form, carrier: e.target.value })}
+          />
+        )}
         <input
           className={styles.travelFormInput}
           placeholder="number (e.g. DL 383)"
@@ -872,35 +1336,77 @@ function TravelLegForm({
       </div>
 
       <div className={styles.travelFormRow}>
+        {form.mode === 'flight' ? (
+          <AirportInput
+            value={form.fromLocation}
+            onSelect={a => onChange({ ...form, fromLocation: `${a.city} / ${a.code}`, fromTimezone: a.timezone })}
+            placeholder="from (search code or city, e.g. AUS)"
+            autoFocus
+          />
+        ) : (
+          <input
+            className={styles.travelFormInput}
+            placeholder="from (e.g. San Francisco)"
+            value={form.fromLocation}
+            onChange={e => onChange({ ...form, fromLocation: e.target.value })}
+            autoFocus
+          />
+        )}
+      </div>
+      <div className={styles.travelFormRow}>
         <input
-          className={styles.travelFormInput}
-          placeholder="from (e.g. San Francisco / SFO)"
-          value={form.fromLocation}
-          onChange={e => onChange({ ...form, fromLocation: e.target.value })}
-          autoFocus
+          type="date"
+          className={styles.travelFormDateInput}
+          value={form.fromDate}
+          onChange={e => onChange({ ...form, fromDate: e.target.value })}
         />
-        <input
-          type="time"
-          className={styles.travelFormTimeInput}
-          value={form.fromTime}
-          onChange={e => onChange({ ...form, fromTime: e.target.value })}
+        <TimeSelect24 value={form.fromTime} onChange={v => onChange({ ...form, fromTime: v })} />
+      </div>
+      <div className={styles.travelFormRow}>
+        <TimezoneInput
+          value={form.fromTimezone}
+          onChange={v => onChange({ ...form, fromTimezone: v })}
+          placeholder="departure timezone (e.g. Chicago)"
         />
       </div>
 
       <div className={styles.travelFormRow}>
+        {form.mode === 'flight' ? (
+          <AirportInput
+            value={form.toLocation}
+            onSelect={a => onChange({ ...form, toLocation: `${a.city} / ${a.code}`, toTimezone: a.timezone })}
+            placeholder="to (search code or city, e.g. LAX)"
+          />
+        ) : (
+          <input
+            className={styles.travelFormInput}
+            placeholder="to (e.g. New York)"
+            value={form.toLocation}
+            onChange={e => onChange({ ...form, toLocation: e.target.value })}
+          />
+        )}
+      </div>
+      <div className={styles.travelFormRow}>
         <input
-          className={styles.travelFormInput}
-          placeholder="to (e.g. New York / JFK)"
-          value={form.toLocation}
-          onChange={e => onChange({ ...form, toLocation: e.target.value })}
+          type="date"
+          className={styles.travelFormDateInput}
+          value={form.toDate}
+          onChange={e => onChange({ ...form, toDate: e.target.value })}
         />
-        <input
-          type="time"
-          className={styles.travelFormTimeInput}
-          value={form.toTime}
-          onChange={e => onChange({ ...form, toTime: e.target.value })}
+        <TimeSelect24 value={form.toTime} onChange={v => onChange({ ...form, toTime: v })} />
+      </div>
+      <div className={styles.travelFormRow}>
+        <TimezoneInput
+          value={form.toTimezone}
+          onChange={v => onChange({ ...form, toTimezone: v })}
+          placeholder="arrival timezone (e.g. Los Angeles)"
         />
       </div>
+      {form.fromTimezone && !form.toTimezone && (
+        <p className={styles.travelFormHint}>
+          Set the arrival timezone too, or duration won't account for the time difference.
+        </p>
+      )}
 
       <div className={styles.travelFormActions}>
         <button
@@ -921,6 +1427,413 @@ function TravelLegForm({
         )}
       </div>
     </div>
+  )
+}
+
+// Flight-mode carrier field: filters AIRLINES by substring as you
+// type and shows up to 8 matches in a dropdown; picking one fills the
+// field with that airline's canonical `value` (see AIRLINES above) so
+// it lines up with the logo-lookup convention. Still a free-text
+// input underneath — nothing stops typing an airline not on the list.
+function AirlineCarrierInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [highlight, setHighlight] = useState(0)
+
+  const matches =
+    value.trim().length > 0
+      ? AIRLINES.filter(a => a.display.toLowerCase().includes(value.trim().toLowerCase())).slice(0, 8)
+      : []
+
+  function select(pick: { display: string; value: string }) {
+    onChange(pick.value)
+    setOpen(false)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open || matches.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlight(h => (h + 1) % matches.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlight(h => (h - 1 + matches.length) % matches.length)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      select(matches[highlight])
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div className={styles.autocompleteWrap}>
+      <input
+        className={styles.travelFormInput}
+        placeholder="carrier (e.g. Delta)"
+        value={value}
+        onChange={e => {
+          onChange(e.target.value)
+          setOpen(true)
+          setHighlight(0)
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={handleKeyDown}
+      />
+      {open && matches.length > 0 && (
+        <div className={styles.autocompleteList}>
+          {matches.map((m, i) => (
+            <div
+              key={m.display}
+              className={styles.autocompleteOption}
+              data-highlighted={i === highlight}
+              // onMouseDown (not onClick) fires before the input's onBlur,
+              // so the click actually registers instead of the dropdown
+              // closing first.
+              onMouseDown={e => {
+                e.preventDefault()
+                select(m)
+              }}
+            >
+              {m.display}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Searchable IANA timezone picker (e.g. "America/Chicago") — same
+// dropdown pattern as AirlineCarrierInput. Matches against the zone
+// id with underscores treated as spaces, so typing "los angeles"
+// finds "America/Los_Angeles". Each option shows its current UTC
+// offset for context, computed only for the short filtered list
+// (cheap) rather than for all ~400 zones on every keystroke.
+function TimezoneInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
+  const [open, setOpen] = useState(false)
+  const [highlight, setHighlight] = useState(0)
+
+  const query = value.trim().toLowerCase()
+  const matches =
+    query.length > 0
+      ? ALL_TIMEZONES.filter(tz => tz.toLowerCase().replace(/_/g, ' ').includes(query)).slice(0, 8)
+      : []
+
+  function select(tz: string) {
+    onChange(tz)
+    setOpen(false)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open || matches.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlight(h => (h + 1) % matches.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlight(h => (h - 1 + matches.length) % matches.length)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      select(matches[highlight])
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div className={styles.autocompleteWrap}>
+      <input
+        className={styles.travelFormInput}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => {
+          onChange(e.target.value)
+          setOpen(true)
+          setHighlight(0)
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={handleKeyDown}
+      />
+      {open && matches.length > 0 && (
+        <div className={styles.autocompleteList}>
+          {matches.map((tz, i) => {
+            const offsetMin = utcOffsetMinutesAt(new Date(), tz)
+            let offsetLabel = ''
+            if (offsetMin != null) {
+              const sign = offsetMin < 0 ? '-' : '+'
+              const hours = Math.abs(offsetMin) / 60
+              offsetLabel = `UTC${sign}${Number.isInteger(hours) ? hours : hours.toFixed(1)}`
+            }
+            return (
+              <div
+                key={tz}
+                className={styles.autocompleteOption}
+                data-highlighted={i === highlight}
+                onMouseDown={e => {
+                  e.preventDefault()
+                  select(tz)
+                }}
+              >
+                {tz.replace(/_/g, ' ')} {offsetLabel && <span className={styles.autocompleteHint}>{offsetLabel}</span>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Flight-mode from/to picker — searches AIRPORTS by code or city, and
+// on selection fills the location field as "City / CODE" (matching
+// the old free-text placeholder's format) AND the matching timezone
+// in one step via onSelect, rather than leaving timezone as a
+// separate manual step that's easy to skip or mistype.
+function AirportInput({
+  value,
+  onSelect,
+  placeholder,
+  autoFocus
+}: {
+  value: string
+  onSelect: (airport: Airport) => void
+  placeholder: string
+  autoFocus?: boolean
+}) {
+  const [text, setText] = useState(value)
+  const [open, setOpen] = useState(false)
+  const [highlight, setHighlight] = useState(0)
+
+  useEffect(() => {
+    setText(value)
+  }, [value])
+
+  const query = text.trim().toLowerCase()
+  const matches =
+    query.length > 0
+      ? AIRPORTS.filter(a => a.code.toLowerCase().includes(query) || a.city.toLowerCase().includes(query)).slice(0, 8)
+      : []
+
+  function select(airport: Airport) {
+    setText(`${airport.city} / ${airport.code}`)
+    onSelect(airport)
+    setOpen(false)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open || matches.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlight(h => (h + 1) % matches.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlight(h => (h - 1 + matches.length) % matches.length)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      select(matches[highlight])
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div className={styles.autocompleteWrap}>
+      <input
+        className={styles.travelFormInput}
+        placeholder={placeholder}
+        value={text}
+        autoFocus={autoFocus}
+        onChange={e => {
+          setText(e.target.value)
+          setOpen(true)
+          setHighlight(0)
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={handleKeyDown}
+      />
+      {open && matches.length > 0 && (
+        <div className={styles.autocompleteList}>
+          {matches.map((a, i) => (
+            <div
+              key={a.code}
+              className={styles.autocompleteOption}
+              data-highlighted={i === highlight}
+              onMouseDown={e => {
+                e.preventDefault()
+                select(a)
+              }}
+            >
+              {a.code} — {a.city}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Tries the carrier's saved logo PNG first (see slugifyCarrier/
+// carrierLogoPath above); if it 404s — or there's no carrier name at
+// all — falls back to the existing colored mode icon. `key={carrier}`
+// forces a remount (and so a fresh onError attempt) whenever the
+// carrier text changes, instead of getting stuck on a stale failure.
+// The full duration-block/logo/route card shown stacked under the
+// "Travel" title. Read-only display — editing goes only through the
+// pencil icon (top-right), not a click anywhere on the card, per the
+// user's explicit ask.
+// "Plane pointing at the destination" divider between the two
+// endpoints — same path geometry as LEG_MODE_CONFIG's icons, but with
+// fill/stroke set to currentColor instead of a hardcoded white, since
+// this sits directly on the card background rather than a colored
+// circle. Flight's icon is naturally drawn pointing up-and-right
+// (~45°); rotated level here so it visually points straight at the
+// arrival side.
+const LEG_DIVIDER_ICONS: Record<LegMode, string> = {
+  flight: `<svg width="16" height="16" viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V4.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-3 2v1.5l4.5-1 4.5 1V21l-3-2v-4.5l8 2.5z" fill="currentColor"/></svg>`,
+  train: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="12" rx="2"/><line x1="5" y1="10" x2="19" y2="10"/><circle cx="8.5" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="18" r="1.3" fill="currentColor" stroke="none"/><line x1="8" y1="18" x2="6" y2="21"/><line x1="16" y1="18" x2="18" y2="21"/></svg>`,
+  bus: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="11" rx="2"/><line x1="3" y1="11" x2="21" y2="11"/><line x1="7" y1="6" x2="7" y2="11"/><line x1="17" y1="6" x2="17" y2="11"/><circle cx="7" cy="19" r="1.4" fill="currentColor" stroke="none"/><circle cx="17" cy="19" r="1.4" fill="currentColor" stroke="none"/></svg>`,
+  personal: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11"/><rect x="3" y="11" width="18" height="6" rx="2"/><circle cx="7.5" cy="17" r="1.4" fill="currentColor" stroke="none"/><circle cx="16.5" cy="17" r="1.4" fill="currentColor" stroke="none"/></svg>`
+}
+
+// "Austin / AUS" -> "AUSTIN (AUS)" for the times row. Falls back to a
+// plain uppercase of whatever's there for locations that don't match
+// the "City / CODE" shape (free-text train/bus/personal entries, or
+// anything typed by hand instead of picked from AirportInput).
+function formatLocationLabel(location: string): string {
+  const match = location.match(/^(.+?)\s*\/\s*(.+)$/)
+  if (match) return `${match[1].trim().toUpperCase()} (${match[2].trim().toUpperCase()})`
+  return location.toUpperCase()
+}
+
+function TravelCardFull({ leg, onEdit }: { leg: TravelLeg; onEdit: () => void }) {
+  const cfg = LEG_MODE_CONFIG[leg.mode]
+  const duration = legDurationParts(leg)
+  const dayOffset = legDayOffset(leg)
+
+  return (
+    <div className={styles.travelCardFull}>
+      <div className={styles.travelCardDuration}>
+        {duration ? (
+          <>
+            <span className={styles.travelCardDurationHours}>
+              {duration.hours > 0 ? `${duration.hours}h` : `${duration.minutes}m`}
+            </span>
+            {duration.hours > 0 && (
+              <span className={styles.travelCardDurationMin}>{duration.minutes} MIN</span>
+            )}
+          </>
+        ) : (
+          <span className={styles.travelCardDurationHours}>—</span>
+        )}
+      </div>
+
+      <div className={styles.travelCardMain}>
+        <p className={styles.travelCardRoute}>
+          {leg.title || `${leg.from_location} to ${leg.to_location}`}
+        </p>
+        <div className={styles.travelCardMeta}>
+          <CarrierBadge mode={leg.mode} carrier={leg.carrier} size={20} />
+          <span>
+            {leg.carrier || cfg.label}
+            {leg.reference ? ` · ${leg.reference}` : ''}
+          </span>
+        </div>
+        {(leg.from_time || leg.to_time) && (
+          <div className={styles.travelCardTimes}>
+            <div className={styles.travelCardEndpoint}>
+              <span className={styles.travelCardLocation}>{formatLocationLabel(leg.from_location)}</span>
+              <span className={styles.travelCardTimeValue}>{leg.from_time?.slice(0, 5)}</span>
+              {leg.from_timezone && leg.from_date && leg.from_time && (
+                <span className={styles.travelCardTz}>
+                  {timezoneAbbreviation(leg.from_timezone, leg.from_date, leg.from_time)}
+                </span>
+              )}
+            </div>
+
+            {leg.to_time && (
+              <>
+                <div className={styles.travelCardDivider}>
+                  {leg.mode === 'flight' ? (
+                    <>
+                      <span className={styles.travelCardDividerDots}>•••••</span>
+                      <span className={styles.travelCardDividerPlane}>{'\u2708\uFE0E'}</span>
+                      <span className={styles.travelCardDividerDots}>•••••</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className={styles.travelCardDividerDots}>•••••</span>
+                      <span
+                        className={styles.travelCardDividerIcon}
+                        style={{ color: cfg.color }}
+                        dangerouslySetInnerHTML={{ __html: LEG_DIVIDER_ICONS[leg.mode] }}
+                      />
+                      <span className={styles.travelCardDividerDots}>•••••</span>
+                    </>
+                  )}
+                </div>
+
+                <div className={styles.travelCardEndpoint}>
+                  <span className={styles.travelCardLocation}>{formatLocationLabel(leg.to_location)}</span>
+                  <span className={styles.travelCardTimeValue}>{leg.to_time.slice(0, 5)}</span>
+                  {leg.to_timezone && leg.to_date && (
+                    <span className={styles.travelCardTz}>
+                      {timezoneAbbreviation(leg.to_timezone, leg.to_date, leg.to_time)}
+                    </span>
+                  )}
+                  {dayOffset && <span className={styles.travelCardDayOffset}>+{dayOffset}</span>}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <button
+        type="button"
+        className={styles.travelCardEditButton}
+        title="edit"
+        aria-label="edit travel leg"
+        onClick={onEdit}
+        dangerouslySetInnerHTML={{ __html: EDIT_ICON }}
+      />
+    </div>
+  )
+}
+
+function CarrierBadge({ mode, carrier, size = 22 }: { mode: LegMode; carrier: string | null; size?: number }) {
+  const [failed, setFailed] = useState(false)
+  const cfg = LEG_MODE_CONFIG[mode]
+
+  if (carrier && !failed) {
+    return (
+      <img
+        key={carrier}
+        src={carrierLogoPath(carrier)}
+        alt={carrier}
+        onError={() => setFailed(true)}
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'contain', flexShrink: 0 }}
+      />
+    )
+  }
+
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        backgroundColor: cfg.color,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0
+      }}
+    >
+      <span dangerouslySetInnerHTML={{ __html: cfg.svg }} />
+    </span>
   )
 }
 
@@ -949,9 +1862,9 @@ function StopEditPopup({
           <p className={styles.stopEditName}>{stop.pin.name}</p>
         </div>
         <div className={styles.travelFormRow}>
-          <input type="time" className={styles.travelFormTimeInput} value={start} onChange={e => setStart(e.target.value)} />
+          <TimeSelect24 value={start} onChange={setStart} />
           <span className={styles.timeSep}>–</span>
-          <input type="time" className={styles.travelFormTimeInput} value={end} onChange={e => setEnd(e.target.value)} />
+          <TimeSelect24 value={end} onChange={setEnd} />
         </div>
         <div className={styles.travelFormActions}>
           <button
@@ -1031,6 +1944,8 @@ function PoolChip({ pin, onQuickAdd }: { pin: Pin; onQuickAdd: (pinId: string) =
 interface TimelineZoneProps {
   timedStops: StopWithPin[]
   timedLegs: TravelLeg[]
+  continuationLegs: TravelLeg[]
+  legColumnLayout: Map<string, ColumnLayout>
   onStopClick: (stop: StopWithPin) => void
   onLegClick: (leg: TravelLeg) => void
 }
@@ -1041,6 +1956,8 @@ interface TimelineZoneProps {
 function TimelineZone({
   timedStops,
   timedLegs,
+  continuationLegs,
+  legColumnLayout,
   onStopClick,
   onLegClick,
   scrollRef
@@ -1068,8 +1985,21 @@ function TimelineZone({
           {timedStops.map(stop => (
             <TimelineStopBlock key={stop.id} stop={stop} onClick={() => onStopClick(stop)} />
           ))}
+          {continuationLegs.map(leg => (
+            <TimelineContinuationBlock
+              key={`cont-${leg.id}`}
+              leg={leg}
+              onClick={() => onLegClick(leg)}
+              layout={legColumnLayout.get(leg.id)}
+            />
+          ))}
           {timedLegs.map(leg => (
-            <TimelineLegBlock key={leg.id} leg={leg} onClick={() => onLegClick(leg)} />
+            <TimelineLegBlock
+              key={leg.id}
+              leg={leg}
+              onClick={() => onLegClick(leg)}
+              layout={legColumnLayout.get(leg.id)}
+            />
           ))}
         </div>
       </div>
@@ -1103,28 +2033,68 @@ function TimelineStopBlock({ stop, onClick }: { stop: StopWithPin; onClick: () =
   )
 }
 
-function TimelineLegBlock({ leg, onClick }: { leg: TravelLeg; onClick: () => void }) {
+function TimelineLegBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: () => void; layout?: ColumnLayout }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `tleg-${leg.id}` })
   const cfg = LEG_MODE_CONFIG[leg.mode]
-  const start = timeToMinutes(leg.from_time) ?? 0
-  const end = timeToMinutes(leg.to_time)
-  const top = (start / 60) * HOUR_PX
-  const height = Math.max(MIN_BLOCK_PX, ((end != null ? end - start : DEFAULT_DURATION_MIN) / 60) * HOUR_PX)
+
+  // Positioned by literal local-clock readings (Option B, confirmed
+  // with the user) rather than real elapsed duration — this is what
+  // makes back-to-back legs through the same city (e.g. arrive LAX,
+  // depart LAX) line up correctly on the shared axis, since both
+  // readings are in that city's clock. The tradeoff: a leg's own block
+  // height can under-represent real duration once it crosses
+  // timezones (the printed duration label, driven by legDurationParts
+  // elsewhere, still shows the correct real elapsed time regardless —
+  // only this block's geometry uses the naive reading). "Crosses
+  // midnight" is detected two ways: the raw local arrival reading is
+  // numerically before the departure reading, OR to_date is a later
+  // calendar date than from_date — either means the block would run
+  // off the bottom of today's track, so it's clipped there with a
+  // "continues" indicator instead.
+  const { top, height, crossesMidnight } = legBlockGeometry(leg)
 
   return (
     <div
       ref={setNodeRef}
       className={styles.timelineBlock}
-      style={{ top, height, backgroundColor: cfg.color, opacity: isDragging ? 0.4 : 1 }}
+      style={{ top, height, backgroundColor: cfg.color, opacity: isDragging ? 0.4 : 1, ...blockPositionStyle(layout) }}
       onClick={onClick}
       {...listeners}
       {...attributes}
     >
-      <span className={styles.timelineBlockIcon} dangerouslySetInnerHTML={{ __html: cfg.svg }} />
+      <CarrierBadge mode={leg.mode} carrier={leg.carrier} size={16} />
       <span className={styles.timelineBlockName}>{leg.carrier || cfg.label}{leg.reference ? ` ${leg.reference}` : ''}</span>
       <span className={styles.timelineBlockTime}>
         {leg.from_time?.slice(0, 5)}
         {leg.to_time ? `–${leg.to_time.slice(0, 5)}` : ''}
+      </span>
+      {crossesMidnight && <span className={styles.timelineBlockContinues}>continues next day →</span>}
+    </div>
+  )
+}
+
+// The tail end of a leg that departed on an EARLIER day and lands on
+// this one — from_date/to_date (real dates, not a guess) are what
+// identify this, computed in the parent as `continuationLegs`. Always
+// starts at the top of the day (00:00); not draggable, since dragging
+// it wouldn't have anywhere meaningful to write back to — editing
+// still goes through the same popup as any other leg, opened from its
+// actual departure day.
+function TimelineContinuationBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: () => void; layout?: ColumnLayout }) {
+  const cfg = LEG_MODE_CONFIG[leg.mode]
+  const { top, height } = continuationBlockGeometry(leg)
+
+  return (
+    <div
+      className={styles.timelineBlock}
+      style={{ top, height, backgroundColor: cfg.color, ...blockPositionStyle(layout) }}
+      onClick={onClick}
+    >
+      <CarrierBadge mode={leg.mode} carrier={leg.carrier} size={16} />
+      <span className={styles.timelineBlockName}>{leg.carrier || cfg.label}{leg.reference ? ` ${leg.reference}` : ''}</span>
+      <span className={styles.timelineBlockTime}>arrives {leg.to_time?.slice(0, 5)}</span>
+      <span className={styles.timelineBlockContinuedFrom}>
+        ← continued from {leg.from_date ? formatDayDate(leg.from_date) : 'yesterday'}
       </span>
     </div>
   )
