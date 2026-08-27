@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useDraggable,
   useDroppable,
@@ -511,7 +512,22 @@ export default function ItineraryView({ tripId, trip }: Props) {
   const miniMapReady = useRef(false)
   const timelineWrapperRef = useRef<HTMLDivElement>(null)
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  // Split mouse/touch behavior instead of one PointerSensor for both —
+  // a single small `distance` threshold works fine for a mouse (no
+  // scrolling risk), but on a touchscreen a normal scroll swipe easily
+  // moves more than a few px before the browser recognizes it as a
+  // scroll, so the same threshold kept hijacking scroll gestures into
+  // accidental block drags. TouchSensor's `delay` requires a genuine
+  // one-second press-and-hold before a drag starts (a quick swipe
+  // never triggers it), which is the standard "hold to drag"
+  // convention on mobile — `tolerance` allows a little finger wobble
+  // during that hold without canceling it. Flight/travel-leg blocks
+  // don't use this sensor at all anymore (see TimelineLegBlock) — only
+  // pool chips and pin-stop blocks are still drag-repositionable.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 1000, tolerance: 8 } })
+  )
 
   useEffect(() => {
     loadDays()
@@ -763,26 +779,6 @@ export default function ItineraryView({ tripId, trip }: Props) {
     refreshTravelLegs()
   }
 
-  async function moveLegToTime(legId: string, newFromMin: number) {
-    const leg = travelLegs.find(l => l.id === legId)
-    if (!leg) return
-    const oldFrom = timeToMinutes(leg.from_time)
-    const oldTo = timeToMinutes(leg.to_time)
-    const duration = oldFrom != null && oldTo != null ? oldTo - oldFrom : null
-    const newFrom = snapMinutes(newFromMin)
-    const newTo = duration != null && duration > 0 ? Math.min(DAY_MINUTES - 1, newFrom + duration) : oldTo
-
-    const { error } = await supabase
-      .from('travel_legs')
-      .update({ from_time: minutesToTime(newFrom), to_time: newTo != null ? minutesToTime(newTo) : null })
-      .eq('id', legId)
-    if (error) {
-      console.error('Failed to move travel leg', error)
-      return
-    }
-    refreshTravelLegs()
-  }
-
   // Quick-add (the "+" on a pool chip, no drag) needs a sensible default
   // time since scheduling now means placing something on the timeline.
   // Defaults to right after the last-ending scheduled item, or 9am if
@@ -906,16 +902,9 @@ export default function ItineraryView({ tripId, trip }: Props) {
         const minutes = dropMinutesFromEvent(event)
         if (minutes != null) moveStopToTime(stopId, minutes)
       }
-      return
     }
-
-    if (activeId.startsWith('tleg-')) {
-      const legId = activeId.slice(5)
-      if (overId === 'timeline-zone') {
-        const minutes = dropMinutesFromEvent(event)
-        if (minutes != null) moveLegToTime(legId, minutes)
-      }
-    }
+    // No 'tleg-' branch — travel-leg blocks aren't draggable anymore,
+    // see TimelineLegBlock.
   }
 
   // One Directions request per day (not one per segment) using waypoints
@@ -1065,9 +1054,8 @@ export default function ItineraryView({ tripId, trip }: Props) {
   const activeStop = activeDragId?.startsWith('tstop-')
     ? stops.find(s => s.id === activeDragId.slice(6))
     : undefined
-  const activeLeg = activeDragId?.startsWith('tleg-')
-    ? travelLegs.find(l => l.id === activeDragId.slice(5))
-    : undefined
+  // No activeLeg — travel-leg blocks aren't draggable anymore, so
+  // activeDragId can never actually start with 'tleg-'.
 
   if (loadingDays) {
     return <p className={styles.hint}>loading itinerary…</p>
@@ -1162,11 +1150,6 @@ export default function ItineraryView({ tripId, trip }: Props) {
         {activeStop && (
           <div className={styles.dragPreviewBlock} style={{ backgroundColor: categoryConfig(activeStop.pin.category).color }}>
             {activeStop.pin.name}
-          </div>
-        )}
-        {activeLeg && (
-          <div className={styles.dragPreviewBlock} style={{ backgroundColor: LEG_MODE_CONFIG[activeLeg.mode].color }}>
-            {activeLeg.carrier || LEG_MODE_CONFIG[activeLeg.mode].label}
           </div>
         )}
       </DragOverlay>
@@ -2034,7 +2017,6 @@ function TimelineStopBlock({ stop, onClick }: { stop: StopWithPin; onClick: () =
 }
 
 function TimelineLegBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: () => void; layout?: ColumnLayout }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `tleg-${leg.id}` })
   const cfg = LEG_MODE_CONFIG[leg.mode]
 
   // Positioned by literal local-clock readings (Option B, confirmed
@@ -2053,14 +2035,23 @@ function TimelineLegBlock({ leg, onClick, layout }: { leg: TravelLeg; onClick: (
   // "continues" indicator instead.
   const { top, height, crossesMidnight } = legBlockGeometry(leg)
 
+  // Not draggable, on purpose — a flight's position encodes real
+  // date/time/timezone data, so an accidental drag could silently
+  // corrupt that in a way a dragged pin stop never could. Moving a
+  // leg now only happens through an intentional edit (tap to open the
+  // popup, change the actual time/date fields there).
   return (
     <div
-      ref={setNodeRef}
       className={styles.timelineBlock}
-      style={{ top, height, backgroundColor: cfg.color, opacity: isDragging ? 0.4 : 1, ...blockPositionStyle(layout) }}
+      style={{
+        top,
+        height,
+        backgroundColor: cfg.color,
+        cursor: 'pointer',
+        touchAction: 'pan-y',
+        ...blockPositionStyle(layout)
+      }}
       onClick={onClick}
-      {...listeners}
-      {...attributes}
     >
       <CarrierBadge mode={leg.mode} carrier={leg.carrier} size={16} />
       <span className={styles.timelineBlockName}>{leg.carrier || cfg.label}{leg.reference ? ` ${leg.reference}` : ''}</span>
@@ -2087,7 +2078,7 @@ function TimelineContinuationBlock({ leg, onClick, layout }: { leg: TravelLeg; o
   return (
     <div
       className={styles.timelineBlock}
-      style={{ top, height, backgroundColor: cfg.color, ...blockPositionStyle(layout) }}
+      style={{ top, height, backgroundColor: cfg.color, cursor: 'pointer', touchAction: 'pan-y', ...blockPositionStyle(layout) }}
       onClick={onClick}
     >
       <CarrierBadge mode={leg.mode} carrier={leg.carrier} size={16} />
