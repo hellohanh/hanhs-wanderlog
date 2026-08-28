@@ -1,0 +1,25 @@
+-- Migration 012: add notes to itinerary_stops
+-- Session 21 — non-destructive, does NOT touch existing rows.
+-- Per L10 (SKILL.md): schema.sql itself must never be re-run against a
+-- database with real data — migrations like this one are how schema
+-- changes get applied going forward instead.
+--
+-- Purpose: replaces the Session 20 approach of storing the timeline
+-- note on pins.notes (a property of the PLACE) with a note per VISIT
+-- instead. A pin scheduled on multiple days (e.g. HND on departure and
+-- return) needs an independent note on each stop, not one shared note
+-- that the second edit clobbers over the first. pins.notes goes back
+-- to being unused (as it was before Session 20) — no data migration
+-- from it, since it was only ever a same-session, unconfirmed-pushed
+-- feature.
+--
+-- No RLS/grant change needed: itinerary_stops already has full
+-- select/insert/update/delete grants + policies from migration 005
+-- (created with full CRUD from the start, per L20), which already
+-- cover this new column.
+--
+-- Status: provided to the user in chat during this session — not yet
+-- confirmed run against the live Supabase project as of this file's
+-- creation. Confirm/update this note once applied.
+
+alter table itinerary_stops add column if not exists notes text;

@@ -924,27 +924,22 @@ export default function ItineraryView({ tripId, trip }: Props) {
 
   async function saveStopTimes(stopId: string, startTime: string, endTime: string, notes: string) {
     setSavingStop(true)
+    // Notes live on the stop, not the pin (itinerary_stops.notes,
+    // migration 012) — so the same pin scheduled on two different
+    // days (e.g. HND on departure and return) can carry two
+    // independent notes instead of one shared note that the later
+    // edit overwrites.
     const { error: stopError } = await supabase
       .from('itinerary_stops')
-      .update({ start_time: startTime || null, end_time: endTime || null })
+      .update({ start_time: startTime || null, end_time: endTime || null, notes: notes.trim() || null })
       .eq('id', stopId)
-    // Notes live on the pin, not the stop (pins.notes — an existing
-    // column, no migration needed) — a separate update against a
-    // different table, so it's checked independently rather than
-    // silently skipped if the pin id happens to be missing.
-    let notesError = null
-    if (editingStop) {
-      const result = await supabase.from('pins').update({ notes: notes.trim() || null }).eq('id', editingStop.pin.id)
-      notesError = result.error
-    }
     setSavingStop(false)
-    if (stopError || notesError) {
-      console.error('Failed to update stop', stopError ?? notesError)
+    if (stopError) {
+      console.error('Failed to update stop', stopError)
       return
     }
     setEditingStop(null)
     if (selectedDayId) loadStops(selectedDayId)
-    loadPins()
   }
 
   // Converts a drag's final on-screen position into a minutes-of-day
@@ -1913,7 +1908,7 @@ function StopEditPopup({
 }) {
   const [start, setStart] = useState(stop.start_time ?? '')
   const [end, setEnd] = useState(stop.end_time ?? '')
-  const [notes, setNotes] = useState(stop.pin.notes ?? '')
+  const [notes, setNotes] = useState(stop.notes ?? '')
   const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
 
   return (
@@ -2123,12 +2118,12 @@ function TimelineStopBlock({
           {stop.end_time ? `–${stop.end_time.slice(0, 5)}` : ''}
         </span>
       </div>
-      {/* stop.pin.notes: a note about the PLACE (pins.notes, an
-          existing column that was never surfaced anywhere before this)
-          — not a separate timeline item. Shown as a second line right
-          in the block, per the user's explicit correction away from an
-          earlier standalone-note design. */}
-      {stop.pin.notes && <p className={styles.timelineBlockNote}>{stop.pin.notes}</p>}
+      {/* stop.notes: a note about this specific VISIT (itinerary_stops.notes,
+          migration 012) — not the pin, so the same place scheduled on two
+          different days can carry two different notes. Shown as a second
+          line right in the block, per the user's explicit correction away
+          from an earlier standalone-note design (Session 20). */}
+      {stop.notes && <p className={styles.timelineBlockNote}>{stop.notes}</p>}
     </div>
   )
 }

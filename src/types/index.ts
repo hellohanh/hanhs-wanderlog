@@ -37,6 +37,7 @@ export interface ItineraryStop {
   order_index: number
   start_time: string | null
   end_time: string | null
+  notes: string | null
 }
 
 export type TravelMode = 'flight' | 'train' | 'bus' | 'personal'
