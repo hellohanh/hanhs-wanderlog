@@ -186,7 +186,8 @@ export default function MapView({ tripId }: Props) {
         mapId,
         mapTypeControl: false,
         streetViewControl: false,
-        fullscreenControl: false
+        fullscreenControl: false,
+        gestureHandling: 'greedy'
       })
 
       // Clicking the map opens the draft form instead of saving right

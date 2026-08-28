@@ -558,7 +558,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
         center: { lat: 20, lng: 0 },
         zoom: 2,
         disableDefaultUI: true,
-        gestureHandling: 'cooperative'
+        gestureHandling: 'greedy'
       })
       miniMapRef.current = map
       directionsRendererRef.current = new google.maps.DirectionsRenderer({
