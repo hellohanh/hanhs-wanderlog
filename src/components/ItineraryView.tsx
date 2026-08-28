@@ -922,19 +922,29 @@ export default function ItineraryView({ tripId, trip }: Props) {
     if (selectedDayId) loadStops(selectedDayId)
   }
 
-  async function saveStopTimes(stopId: string, startTime: string, endTime: string) {
+  async function saveStopTimes(stopId: string, startTime: string, endTime: string, notes: string) {
     setSavingStop(true)
-    const { error } = await supabase
+    const { error: stopError } = await supabase
       .from('itinerary_stops')
       .update({ start_time: startTime || null, end_time: endTime || null })
       .eq('id', stopId)
+    // Notes live on the pin, not the stop (pins.notes — an existing
+    // column, no migration needed) — a separate update against a
+    // different table, so it's checked independently rather than
+    // silently skipped if the pin id happens to be missing.
+    let notesError = null
+    if (editingStop) {
+      const result = await supabase.from('pins').update({ notes: notes.trim() || null }).eq('id', editingStop.pin.id)
+      notesError = result.error
+    }
     setSavingStop(false)
-    if (error) {
-      console.error('Failed to update stop time', error)
+    if (stopError || notesError) {
+      console.error('Failed to update stop', stopError ?? notesError)
       return
     }
     setEditingStop(null)
     if (selectedDayId) loadStops(selectedDayId)
+    loadPins()
   }
 
   // Converts a drag's final on-screen position into a minutes-of-day
@@ -1144,6 +1154,18 @@ export default function ItineraryView({ tripId, trip }: Props) {
     return computeColumnLayout(items)
   }, [continuationLegs, timedLegs])
 
+  // Same idea for overlapping pin stops (e.g. Shibuya Crossing and a
+  // rooftop bar scheduled at the same time) — a separate layout from
+  // legs above, since stops and legs are visually distinct block types
+  // that wouldn't normally coincide in a well-planned itinerary; no
+  // hard cap on how many columns (the user's "up to 3" was the example
+  // given, not a limit to enforce — the algorithm splits however many
+  // genuinely overlap, the same way it already does for legs).
+  const stopColumnLayout = useMemo(
+    () => computeColumnLayout(timedStops.map(s => ({ id: s.id, ...stopBlockGeometry(s) }))),
+    [timedStops]
+  )
+
   const activePin = activeDragId?.startsWith('pool-') ? pins.find(p => p.id === activeDragId.slice(5)) : undefined
   const activeStop = activeDragId?.startsWith('tstop-')
     ? stops.find(s => s.id === activeDragId.slice(6))
@@ -1252,6 +1274,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
             <TimelineZone
               scrollRef={timelineWrapperRef}
               timedStops={timedStops}
+              stopColumnLayout={stopColumnLayout}
               timedLegs={timedLegs}
               continuationLegs={continuationLegs}
               legColumnLayout={legColumnLayout}
@@ -1884,12 +1907,13 @@ function StopEditPopup({
 }: {
   stop: StopWithPin
   saving: boolean
-  onSave: (stopId: string, startTime: string, endTime: string) => void
+  onSave: (stopId: string, startTime: string, endTime: string, notes: string) => void
   onRemove: (stopId: string) => void
   onClose: () => void
 }) {
   const [start, setStart] = useState(stop.start_time ?? '')
   const [end, setEnd] = useState(stop.end_time ?? '')
+  const [notes, setNotes] = useState(stop.pin.notes ?? '')
   const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
 
   return (
@@ -1904,11 +1928,18 @@ function StopEditPopup({
           <span className={styles.timeSep}>–</span>
           <TimeSelect24 value={end} onChange={setEnd} />
         </div>
+        <textarea
+          className={styles.noteTextarea}
+          placeholder="e.g. Go up to the upper deck of the adjacent tower to look down at the crossing"
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          rows={3}
+        />
         <div className={styles.travelFormActions}>
           <button
             type="button"
             className={styles.travelFormSave}
-            onClick={() => onSave(stop.id, start, end)}
+            onClick={() => onSave(stop.id, start, end, notes)}
             disabled={saving}
           >
             {saving ? '…' : 'save'}
@@ -1981,6 +2012,7 @@ function PoolChip({ pin, onQuickAdd }: { pin: Pin; onQuickAdd: (pinId: string) =
 
 interface TimelineZoneProps {
   timedStops: StopWithPin[]
+  stopColumnLayout: Map<string, ColumnLayout>
   timedLegs: TravelLeg[]
   continuationLegs: TravelLeg[]
   legColumnLayout: Map<string, ColumnLayout>
@@ -1993,6 +2025,7 @@ interface TimelineZoneProps {
 // introducing forwardRef for one component.
 function TimelineZone({
   timedStops,
+  stopColumnLayout,
   timedLegs,
   continuationLegs,
   legColumnLayout,
@@ -2021,7 +2054,12 @@ function TimelineZone({
           ))}
 
           {timedStops.map(stop => (
-            <TimelineStopBlock key={stop.id} stop={stop} onClick={() => onStopClick(stop)} />
+            <TimelineStopBlock
+              key={stop.id}
+              stop={stop}
+              onClick={() => onStopClick(stop)}
+              layout={stopColumnLayout.get(stop.id)}
+            />
           ))}
           {continuationLegs.map(leg => (
             <TimelineContinuationBlock
@@ -2045,28 +2083,52 @@ function TimelineZone({
   )
 }
 
-function TimelineStopBlock({ stop, onClick }: { stop: StopWithPin; onClick: () => void }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `tstop-${stop.id}` })
-  const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
+// Shared with the column-overlap layout computed in the parent, so
+// the layout math can't drift from what this block actually renders —
+// same pattern already used for legs (legBlockGeometry).
+function stopBlockGeometry(stop: StopWithPin): { top: number; height: number } {
   const start = timeToMinutes(stop.start_time) ?? 0
   const end = timeToMinutes(stop.end_time)
   const top = (start / 60) * HOUR_PX
   const height = Math.max(MIN_BLOCK_PX, ((end != null ? end - start : DEFAULT_DURATION_MIN) / 60) * HOUR_PX)
+  return { top, height }
+}
+
+function TimelineStopBlock({
+  stop,
+  onClick,
+  layout
+}: {
+  stop: StopWithPin
+  onClick: () => void
+  layout?: ColumnLayout
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `tstop-${stop.id}` })
+  const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
+  const { top, height } = stopBlockGeometry(stop)
 
   return (
     <div
       ref={setNodeRef}
       className={styles.timelineBlock}
-      style={{ top, height, backgroundColor: badgeColor, opacity: isDragging ? 0.4 : 1 }}
+      style={{ top, height, backgroundColor: badgeColor, opacity: isDragging ? 0.4 : 1, ...blockPositionStyle(layout) }}
       onClick={onClick}
       {...listeners}
       {...attributes}
     >
-      <span className={styles.timelineBlockName}>{stop.pin.name}</span>
-      <span className={styles.timelineBlockTime}>
-        {stop.start_time?.slice(0, 5)}
-        {stop.end_time ? `–${stop.end_time.slice(0, 5)}` : ''}
-      </span>
+      <div className={styles.timelineBlockHeader}>
+        <span className={styles.timelineBlockName}>{stop.pin.name}</span>
+        <span className={styles.timelineBlockTime}>
+          {stop.start_time?.slice(0, 5)}
+          {stop.end_time ? `–${stop.end_time.slice(0, 5)}` : ''}
+        </span>
+      </div>
+      {/* stop.pin.notes: a note about the PLACE (pins.notes, an
+          existing column that was never surfaced anywhere before this)
+          — not a separate timeline item. Shown as a second line right
+          in the block, per the user's explicit correction away from an
+          earlier standalone-note design. */}
+      {stop.pin.notes && <p className={styles.timelineBlockNote}>{stop.pin.notes}</p>}
     </div>
   )
 }
