@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import type { Trip } from '../types'
@@ -19,6 +19,68 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+// Backup format (Session 24). Self-contained per trip: pins and days
+// are nested under their trip, and stops/legs reference pins/days via
+// a "_ref" field that's ONLY meaningful within this file (an index
+// into that trip's own pins/days arrays) — not a real database id.
+// This keeps the file readable and means a trip can be re-imported on
+// its own without needing the rest of the file. Intentionally leaves
+// out ids, owner_id, added_by, trip_members, and invite_token: a
+// restore always creates brand-new trips owned by whoever imports the
+// file, never overwrites anything, and never tries to preserve who
+// added what or who had access before.
+interface BackupPin {
+  name: string
+  category: string
+  lat: number
+  lng: number
+  notes: string | null
+  place_id: string | null
+  icon: string | null
+}
+interface BackupStop {
+  pin_ref: number
+  order_index: number
+  start_time: string | null
+  end_time: string | null
+  notes: string | null
+}
+interface BackupLeg {
+  mode: string
+  carrier: string | null
+  reference: string | null
+  title: string | null
+  from_location: string
+  from_date: string | null
+  from_time: string | null
+  from_timezone: string | null
+  to_location: string
+  to_date: string | null
+  to_time: string | null
+  to_timezone: string | null
+  order_index: number
+}
+interface BackupDay {
+  day_number: number
+  date: string | null
+  stops: BackupStop[]
+  travel_legs: BackupLeg[]
+}
+interface BackupTrip {
+  name: string
+  destination: string
+  start_date: string | null
+  end_date: string | null
+  pins: BackupPin[]
+  itinerary_days: BackupDay[]
+}
+interface BackupFile {
+  app: "Hanh's Wanderlog"
+  version: 1
+  exported_at: string
+  trips: BackupTrip[]
+}
+
 export default function Dashboard() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [loading, setLoading] = useState(true)
@@ -35,6 +97,11 @@ export default function Dashboard() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [deletingTrip, setDeletingTrip] = useState<Trip | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [pendingImport, setPendingImport] = useState<BackupFile | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -243,6 +310,200 @@ export default function Dashboard() {
     loadTrips()
   }
 
+  // Backup export (Session 24) — every trip the current user can see
+  // (owned or shared with them), fully self-contained as one JSON
+  // file. Read-only: doesn't touch the database at all, just walks
+  // the same tables copyTrip already reads from.
+  async function exportAllTrips() {
+    setBackupBusy(true)
+    try {
+      const backupTrips: BackupTrip[] = []
+      for (const trip of trips) {
+        const { data: pins } = await supabase.from('pins').select('*').eq('trip_id', trip.id)
+        const pinIndexById = new Map<string, number>()
+        ;(pins ?? []).forEach((p, i) => pinIndexById.set(p.id, i))
+
+        const { data: days } = await supabase
+          .from('itinerary_days')
+          .select('*')
+          .eq('trip_id', trip.id)
+          .order('day_number')
+        const dayIds = (days ?? []).map(d => d.id)
+
+        const { data: stops } = dayIds.length
+          ? await supabase.from('itinerary_stops').select('*').in('itinerary_day_id', dayIds)
+          : { data: [] }
+        const { data: legs } = dayIds.length
+          ? await supabase.from('travel_legs').select('*').in('itinerary_day_id', dayIds)
+          : { data: [] }
+
+        backupTrips.push({
+          name: trip.name,
+          destination: trip.destination,
+          start_date: trip.start_date,
+          end_date: trip.end_date,
+          pins: (pins ?? []).map(p => ({
+            name: p.name,
+            category: p.category,
+            lat: p.lat,
+            lng: p.lng,
+            notes: p.notes,
+            place_id: p.place_id,
+            icon: p.icon
+          })),
+          itinerary_days: (days ?? []).map(d => ({
+            day_number: d.day_number,
+            date: d.date,
+            stops: (stops ?? [])
+              .filter(s => s.itinerary_day_id === d.id && pinIndexById.has(s.pin_id))
+              .map(s => ({
+                pin_ref: pinIndexById.get(s.pin_id)!,
+                order_index: s.order_index,
+                start_time: s.start_time,
+                end_time: s.end_time,
+                notes: s.notes
+              })),
+            travel_legs: (legs ?? [])
+              .filter(l => l.itinerary_day_id === d.id)
+              .map(l => ({
+                mode: l.mode,
+                carrier: l.carrier,
+                reference: l.reference,
+                title: l.title,
+                from_location: l.from_location,
+                from_date: l.from_date,
+                from_time: l.from_time,
+                from_timezone: l.from_timezone,
+                to_location: l.to_location,
+                to_date: l.to_date,
+                to_time: l.to_time,
+                to_timezone: l.to_timezone,
+                order_index: l.order_index
+              }))
+          }))
+        })
+      }
+
+      const backup: BackupFile = {
+        app: "Hanh's Wanderlog",
+        version: 1,
+        exported_at: new Date().toISOString(),
+        trips: backupTrips
+      }
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `hanhs-wanderlog-backup-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Failed to export trips', err)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  // File picker just parses + validates; the actual write happens in
+  // confirmImport() below, only after the user confirms the count.
+  function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    setImportError(null)
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file later
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result as string)
+        if (parsed?.app !== "Hanh's Wanderlog" || !Array.isArray(parsed?.trips)) {
+          setImportError("That file doesn't look like a Hanh's Wanderlog backup.")
+          return
+        }
+        setPendingImport(parsed as BackupFile)
+      } catch {
+        setImportError("Couldn't read that file — is it a valid backup JSON?")
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  // Restore (Session 24) — always creates brand-new trips owned by
+  // whoever's importing, never overwrites or matches against existing
+  // trips. Same insert-then-remap pattern as confirmCopy above, just
+  // sourced from the parsed file instead of a live trip's tables.
+  async function confirmImport() {
+    if (!pendingImport) return
+    setImportBusy(true)
+    try {
+      const { data: userData } = await supabase.auth.getUser()
+      const ownerId = userData.user?.id
+
+      for (const t of pendingImport.trips) {
+        const { data: newTrip, error: tripError } = await supabase
+          .from('trips')
+          .insert({
+            name: t.name,
+            destination: t.destination,
+            start_date: t.start_date,
+            end_date: t.end_date,
+            owner_id: ownerId
+          })
+          .select()
+          .single()
+        if (tripError || !newTrip) throw tripError ?? new Error('No trip returned')
+
+        let newPins: { id: string }[] = []
+        if (t.pins.length > 0) {
+          const { data, error: pinsError } = await supabase
+            .from('pins')
+            .insert(t.pins.map(p => ({ ...p, trip_id: newTrip.id, added_by: ownerId })))
+            .select()
+          if (pinsError) throw pinsError
+          newPins = data ?? []
+        }
+
+        for (const d of t.itinerary_days) {
+          const { data: newDay, error: dayError } = await supabase
+            .from('itinerary_days')
+            .insert({ trip_id: newTrip.id, day_number: d.day_number, date: d.date })
+            .select()
+            .single()
+          if (dayError || !newDay) throw dayError ?? new Error('No day returned')
+
+          const stopsPayload = d.stops
+            .filter(s => newPins[s.pin_ref])
+            .map(s => ({
+              itinerary_day_id: newDay.id,
+              pin_id: newPins[s.pin_ref].id,
+              order_index: s.order_index,
+              start_time: s.start_time,
+              end_time: s.end_time,
+              notes: s.notes
+            }))
+          if (stopsPayload.length > 0) {
+            const { error: stopsError } = await supabase.from('itinerary_stops').insert(stopsPayload)
+            if (stopsError) throw stopsError
+          }
+
+          if (d.travel_legs.length > 0) {
+            const { error: legsError } = await supabase
+              .from('travel_legs')
+              .insert(d.travel_legs.map(l => ({ ...l, itinerary_day_id: newDay.id })))
+            if (legsError) throw legsError
+          }
+        }
+      }
+
+      setPendingImport(null)
+      loadTrips()
+    } catch (err) {
+      console.error('Failed to import backup', err)
+      setImportError('Something went wrong partway through — check the console for details. Trips already created before the error are still in your dashboard.')
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
   const today = new Date().toISOString().slice(0, 10)
   const upcoming = trips.filter(t => !t.end_date || t.end_date >= today)
   const past = trips.filter(t => t.end_date && t.end_date < today)
@@ -258,6 +519,19 @@ export default function Dashboard() {
           <button className={styles.newTripButton} onClick={() => setShowNewTripForm(true)}>
             + new trip
           </button>
+          <button className={styles.signOutButton} onClick={exportAllTrips} disabled={backupBusy || trips.length === 0}>
+            {backupBusy ? 'backing up…' : 'back up all'}
+          </button>
+          <button className={styles.signOutButton} onClick={() => fileInputRef.current?.click()}>
+            restore from backup
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json"
+            style={{ display: 'none' }}
+            onChange={handleFileSelected}
+          />
           <button className={styles.signOutButton} onClick={handleSignOut}>
             sign out
           </button>
@@ -319,6 +593,37 @@ export default function Dashboard() {
               {deleteBusy ? 'deleting…' : 'yes, delete it'}
             </button>
             <button onClick={() => setDeletingTrip(null)} disabled={deleteBusy}>
+              cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {importError && !pendingImport && (
+        <div className={styles.newTripForm} onClick={e => e.stopPropagation()}>
+          <p className={styles.deleteWarning}>{importError}</p>
+          <div className={styles.formActions}>
+            <button onClick={() => setImportError(null)}>ok</button>
+          </div>
+        </div>
+      )}
+
+      {pendingImport && (
+        <div className={styles.newTripForm} onClick={e => e.stopPropagation()}>
+          <p className={styles.deleteWarning}>
+            This file has {pendingImport.trips.length}{' '}
+            {pendingImport.trips.length === 1 ? 'trip' : 'trips'}
+            {pendingImport.exported_at
+              ? ` (backed up ${new Date(pendingImport.exported_at).toLocaleDateString()})`
+              : ''}
+            . Importing adds them as brand-new trips — nothing existing gets overwritten or replaced.
+          </p>
+          {importError && <p className={styles.deleteWarning}>{importError}</p>}
+          <div className={styles.formActions}>
+            <button onClick={confirmImport} disabled={importBusy}>
+              {importBusy ? 'importing…' : `import ${pendingImport.trips.length === 1 ? 'trip' : 'trips'}`}
+            </button>
+            <button onClick={() => { setPendingImport(null); setImportError(null) }} disabled={importBusy}>
               cancel
             </button>
           </div>

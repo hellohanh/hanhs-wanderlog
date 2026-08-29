@@ -87,6 +87,61 @@ function getPinOverlayClass() {
   return PinOverlayClass
 }
 
+// Custom pin-popup overlay (Session 24) — replaces google.maps.InfoWindow
+// entirely. InfoWindow's default chrome reserves a fixed header row for
+// its close button regardless of content, and neither overriding its
+// internal (undocumented, version-fragile) CSS classes nor the official
+// `headerDisabled` option actually removed that gap in practice — plus
+// removing the native close button shifted keyboard focus onto the
+// first link instead, showing a visible focus outline around it. A
+// plain OverlayView sidesteps all of it: it's just our own HTML element
+// with our own padding and our own close button, using the exact same
+// technique as the pin markers themselves (see getPinOverlayClass
+// above) — so it repositions automatically on pan/zoom the same way.
+let PinPopupOverlayClass:
+  | (new (position: google.maps.LatLng, el: HTMLElement) => google.maps.OverlayView)
+  | null = null
+
+function getPinPopupOverlayClass() {
+  if (!PinPopupOverlayClass) {
+    class PinPopupOverlay extends google.maps.OverlayView {
+      private el: HTMLElement
+      private position: google.maps.LatLng
+
+      constructor(position: google.maps.LatLng, el: HTMLElement) {
+        super()
+        this.position = position
+        this.el = el
+      }
+
+      onAdd() {
+        this.getPanes()?.floatPane.appendChild(this.el)
+      }
+
+      draw() {
+        const point = this.getProjection()?.fromLatLngToDivPixel(this.position)
+        if (point) {
+          this.el.style.position = 'absolute'
+          // Horizontally centered on the pin; bottom edge sits 33px
+          // above the anchor point, clearing the marker's own height
+          // (same 33px used for the marker overlay/InfoWindow offset
+          // above) plus a small gap so the popup doesn't touch the pin.
+          this.el.style.left = `${point.x}px`
+          this.el.style.top = `${point.y - 41}px`
+          this.el.style.transform = 'translate(-50%, -100%)'
+        }
+      }
+
+      onRemove() {
+        this.el.remove()
+      }
+    }
+    PinPopupOverlayClass = PinPopupOverlay
+  }
+  return PinPopupOverlayClass
+}
+
+
 // Same custom-OverlayView technique as pins above, but centered on its
 // point both ways (a pill label has no "tip" to anchor, unlike a
 // teardrop pin) via CSS transform: translate(-50%, -50%) rather than a
@@ -140,6 +195,14 @@ export default function MapView({ tripId }: Props) {
   const [mapReady, setMapReady] = useState(false)
   const [pins, setPins] = useState<Pin[]>([])
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null)
+  // Note editing (Session 24) — pins.notes was added back in Session
+  // 20 for this exact purpose (a note about the PLACE, on the map
+  // popup) but was never wired up before Session 21 repurposed the
+  // idea for per-visit itinerary notes on a different column instead.
+  // Track by pin id (not a boolean) so it naturally falls out of edit
+  // mode if a different pin gets clicked while editing.
+  const [noteEditingPinId, setNoteEditingPinId] = useState<string | null>(null)
+  const [savingNote, setSavingNote] = useState(false)
   const [draftPin, setDraftPin] = useState<DraftPin | null>(null)
   const [nearbyEats, setNearbyEats] = useState<{ name: string; lat: number; lng: number }[]>([])
   const [loadingEats, setLoadingEats] = useState(false)
@@ -162,7 +225,7 @@ export default function MapView({ tripId }: Props) {
   const [showDistricts, setShowDistricts] = useState(false)
   const districtsLayerRef = useRef<google.maps.Data | null>(null)
   const districtLabelsRef = useRef<google.maps.OverlayView[]>([])
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
+  const popupOverlayRef = useRef<google.maps.OverlayView | null>(null)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>([])
@@ -247,6 +310,23 @@ export default function MapView({ tripId }: Props) {
       return
     }
     setPins(data ?? [])
+  }
+
+  // Saves the pin-level note (pins.notes — a note about the PLACE,
+  // shared across every stop that reuses this pin; not to be confused
+  // with itinerary_stops.notes, which is per-visit — see E62/L31).
+  async function saveNote(pinId: string, notes: string) {
+    setSavingNote(true)
+    const trimmed = notes.trim() || null
+    const { error } = await supabase.from('pins').update({ notes: trimmed }).eq('id', pinId)
+    setSavingNote(false)
+    if (error) {
+      console.error('Failed to save pin note', error)
+      return
+    }
+    setNoteEditingPinId(null)
+    setSelectedPin(prev => (prev && prev.id === pinId ? { ...prev, notes: trimmed } : prev))
+    loadPins()
   }
 
   async function createPin(
@@ -508,24 +588,14 @@ export default function MapView({ tripId }: Props) {
     const map = mapRef.current
     if (!map) return
 
-    if (!selectedPin) {
-      infoWindowRef.current?.close()
-      return
-    }
-
-    if (!infoWindowRef.current) {
-      // The InfoWindow anchors its tail at the raw lat/lng point — but
-      // that's exactly where our custom teardrop marker's TIP sits (see
-      // the OverlayView draw() offset above: the shape extends 33px
-      // upward from that point), so without an offset the popup's tail
-      // lands on the pin's base and the whole bubble overlaps the
-      // marker shape. Pushing the tail up by the marker's height (33px)
-      // clears it — the popup then sits on top of the pin instead of
-      // covering it.
-      infoWindowRef.current = new google.maps.InfoWindow({ pixelOffset: new google.maps.Size(0, -33) })
-      infoWindowRef.current.addListener('closeclick', () => setSelectedPin(null))
-    }
-    const iw = infoWindowRef.current
+    // Always torn down and rebuilt fresh below rather than mutated in
+    // place — simpler than reaching into the overlay's own internals
+    // to update an already-open popup, and cheap enough for a small
+    // element like this to not matter (e.g. when placeDetails finishes
+    // loading a moment after the popup first opens).
+    popupOverlayRef.current?.setMap(null)
+    popupOverlayRef.current = null
+    if (!selectedPin) return
 
     const mapsUrl = selectedPin.place_id
       ? `https://www.google.com/maps/place/?q=place_id:${selectedPin.place_id}`
@@ -533,6 +603,20 @@ export default function MapView({ tripId }: Props) {
 
     const esc = (s: string) =>
       s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+    // Auto-linkifies plain URLs in note text (e.g. a pasted YouTube
+    // link) into clickable links — per the user's explicit choice not
+    // to build a separate dedicated video-link field, a note is just
+    // free text and any URL in it should work as a link. Escapes
+    // first so note content itself can never inject markup, then
+    // matches on the already-escaped text (safe: escaped entities
+    // like &amp; contain no whitespace, so the URL regex still finds
+    // the full link intact).
+    const linkify = (s: string) =>
+      esc(s).replace(
+        /(https?:\/\/[^\s]+)/g,
+        url => `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">${url}</a>`
+      )
 
     const rows: string[] = []
     if (loadingDetails) {
@@ -547,16 +631,60 @@ export default function MapView({ tripId }: Props) {
       }
     }
 
-    iw.setContent(`
-      <div style="font-family:'Segoe UI',sans-serif;min-width:200px;max-width:260px;">
-        <p style="margin:0;font-size:15px;font-weight:600;">${esc(selectedPin.name)}</p>
-        ${rows.join('')}
-        <p style="margin:8px 0 0;font-size:13px;"><a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">View in Google Maps</a></p>
-      </div>
-    `)
-    iw.setPosition({ lat: selectedPin.lat, lng: selectedPin.lng })
-    iw.open(map)
-  }, [selectedPin, placeDetails, loadingDetails])
+    const isEditingNote = noteEditingPinId === selectedPin.id
+    const noteHtml = isEditingNote
+      ? `<div style="margin-top:8px;border-top:1px solid #e5e5e0;padding-top:8px;">
+           <textarea id="wanderlog-note-input" placeholder="Add a note — paste a YouTube link if you want" style="width:100%;min-height:60px;font:inherit;font-size:13px;padding:6px;border:1px solid #dadce0;border-radius:4px;resize:vertical;box-sizing:border-box;">${esc(selectedPin.notes ?? '')}</textarea>
+           <div style="margin-top:6px;display:flex;gap:8px;">
+             <button id="wanderlog-note-save" type="button" style="font-size:13px;padding:4px 10px;background:#1a73e8;color:#fff;border:none;border-radius:4px;cursor:pointer;" ${savingNote ? 'disabled' : ''}>${savingNote ? 'saving…' : 'save'}</button>
+             <button id="wanderlog-note-cancel" type="button" style="font-size:13px;padding:4px 10px;background:none;border:1px solid #dadce0;border-radius:4px;cursor:pointer;" ${savingNote ? 'disabled' : ''}>cancel</button>
+           </div>
+         </div>`
+      : selectedPin.notes
+        ? `<div style="margin-top:8px;border-top:1px solid #e5e5e0;padding-top:8px;">
+             <p style="margin:0;font-size:13px;white-space:pre-wrap;">${linkify(selectedPin.notes)}</p>
+             <button id="wanderlog-note-edit" type="button" style="margin-top:4px;font-size:12px;color:#5f6368;background:none;border:none;cursor:pointer;padding:0;">edit note</button>
+           </div>`
+        : `<div style="margin-top:8px;border-top:1px solid #e5e5e0;padding-top:8px;">
+             <button id="wanderlog-note-edit" type="button" style="font-size:12px;color:#1a73e8;background:none;border:none;cursor:pointer;padding:0;">+ add note</button>
+           </div>`
+
+    // Own container, own chrome — no InfoWindow bubble/tail/header
+    // involved at all, so there's nothing reserved above the title
+    // and no native close button to steal keyboard focus.
+    const el = document.createElement('div')
+    el.style.cssText =
+      'font-family:"Segoe UI",sans-serif;min-width:200px;max-width:260px;position:relative;' +
+      'background:#fff;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.25);padding:12px 24px 12px 12px;'
+    el.innerHTML = `
+      <p style="margin:0;font-size:15px;font-weight:600;">${esc(selectedPin.name)}</p>
+      ${rows.join('')}
+      <p style="margin:8px 0 0;font-size:13px;"><a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">View in Google Maps</a></p>
+      ${noteHtml}
+    `
+    const closeBtn = document.createElement('button')
+    closeBtn.type = 'button'
+    closeBtn.setAttribute('aria-label', 'close')
+    closeBtn.textContent = '×'
+    closeBtn.style.cssText =
+      'position:absolute;top:4px;right:4px;background:none;border:none;font-size:18px;' +
+      'line-height:1;cursor:pointer;color:#5f6368;padding:4px;'
+    closeBtn.addEventListener('click', () => setSelectedPin(null))
+    el.appendChild(closeBtn)
+
+    const pinId = selectedPin.id
+    el.querySelector('#wanderlog-note-edit')?.addEventListener('click', () => setNoteEditingPinId(pinId))
+    el.querySelector('#wanderlog-note-cancel')?.addEventListener('click', () => setNoteEditingPinId(null))
+    el.querySelector('#wanderlog-note-save')?.addEventListener('click', () => {
+      const textarea = el.querySelector<HTMLTextAreaElement>('#wanderlog-note-input')
+      if (textarea) saveNote(pinId, textarea.value)
+    })
+
+    const PopupOverlay = getPinPopupOverlayClass()
+    const overlay = new PopupOverlay(new google.maps.LatLng(selectedPin.lat, selectedPin.lng), el)
+    overlay.setMap(map)
+    popupOverlayRef.current = overlay
+  }, [selectedPin, placeDetails, loadingDetails, noteEditingPinId, savingNote])
 
   // Name/address/phone for the selected pin. Search-added pins carry a
   // real Google place_id (captured at creation, see startDraftFromSearchResult)
