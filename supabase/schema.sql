@@ -131,6 +131,19 @@ grant select, insert, update, delete on travel_legs to authenticated;
 -- Per E5 (SKILL.md): every invited member gets full edit rights,
 -- no owner/contributor permission tiers.
 
+-- Added migration 013 (Session 23) — this was missing from day one.
+-- Every policy below that checks membership does it via
+-- `exists (select 1 from trip_members where trip_id = ... and
+-- user_id = auth.uid())`, which is itself a read against
+-- trip_members — so without trip_members having its OWN select
+-- policy, that read was silently blocked by its RLS (enabled, zero
+-- policies = deny all), making every one of those EXISTS checks
+-- always false for non-owners. Scoped to the caller's own row only —
+-- confirms membership without exposing who else is on a trip.
+create policy "users can view own membership"
+  on trip_members for select
+  using (user_id = auth.uid());
+
 create policy "trip members can view trips"
   on trips for select
   using (
