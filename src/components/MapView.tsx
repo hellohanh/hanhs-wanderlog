@@ -903,11 +903,43 @@ export default function MapView({ tripId }: Props) {
     }
   }
 
-  const sidebarOpen = draftPin !== null || selectedPin !== null
+  // Session 24: used to auto-expand to full height the instant a pin
+  // was selected — but that also auto-opens the mobile bottom sheet's
+  // full-screen backdrop, which covers the floating map popup (and its
+  // new note editor, see E68) underneath. Now defaults to peeked and
+  // only expands when the user deliberately taps/swipes the "pinned"
+  // handle below — except for draftPin (adding a new pin), which still
+  // auto-expands since there's no competing popup to protect there and
+  // the form needs to be immediately visible/fillable.
+  const [sheetExpanded, setSheetExpanded] = useState(false)
+  const sheetDragStartY = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (draftPin) setSheetExpanded(true)
+    else if (selectedPin) setSheetExpanded(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftPin, selectedPin?.id])
+
+  // Tap toggles instantly; a real swipe (>20px) expands (up) or
+  // collapses (down) — small movements under that (e.g. a slightly
+  // imprecise tap) fall through to the tap behavior instead of being
+  // misread as an unwanted swipe.
+  function handleSheetHandleTouchStart(e: React.TouchEvent) {
+    sheetDragStartY.current = e.touches[0].clientY
+  }
+  function handleSheetHandleTouchEnd(e: React.TouchEvent) {
+    if (sheetDragStartY.current === null) return
+    const deltaY = e.changedTouches[0].clientY - sheetDragStartY.current
+    sheetDragStartY.current = null
+    if (deltaY < -20) setSheetExpanded(true)
+    else if (deltaY > 20) setSheetExpanded(false)
+    else setSheetExpanded(v => !v)
+  }
 
   function closeSidebar() {
     setDraftPin(null)
     setSelectedPin(null)
+    setSheetExpanded(false)
   }
 
   return (
@@ -996,16 +1028,18 @@ export default function MapView({ tripId }: Props) {
           )}
         </div>
 
-        {/* On mobile this becomes a slide-up bottom sheet (see .sidebar
-            media query) — hidden until a pin is tapped or a new one
-            dropped, controlled via .sidebarOpen. On desktop it's the
+        {/* On mobile this becomes a draggable bottom sheet (see .sidebar
+            media query) — peeked by default even with a pin selected
+            (see sheetExpanded above), pulled up via the "pinned" handle
+            below rather than auto-expanding, so it doesn't cover the
+            floating map popup underneath. On desktop it's the
             always-visible side panel, unchanged. */}
         <div
           className={styles.sidebarBackdrop}
-          data-open={sidebarOpen}
+          data-open={sheetExpanded}
           onClick={closeSidebar}
         />
-        <aside className={styles.sidebar} data-open={sidebarOpen}>
+        <aside className={styles.sidebar} data-open={sheetExpanded}>
           <button
             type="button"
             className={styles.sidebarClose}
@@ -1190,9 +1224,24 @@ export default function MapView({ tripId }: Props) {
 
           {/* Always visible in this panel, regardless of the draft-pin
               form or nearby-eats state above — a running list of every
-              pin on this trip, tap to select + pan/zoom the map to it. */}
+              pin on this trip, tap to select + pan/zoom the map to it.
+              This title is also the mobile sheet's drag/tap handle
+              (Session 24) — it's the one thing that's always visible
+              during the peeked state (it's the last child, and the
+              peek reveals the sheet's bottom edge), so it doubles as
+              the handle rather than needing a separate element. Inert
+              on desktop — the click/touch handlers just have nothing
+              to visibly toggle there. */}
           <div className={styles.pinnedSection}>
-            <p className={styles.sidebarTitle}>pinned ({pins.length})</p>
+            <p
+              className={`${styles.sidebarTitle} ${styles.sheetHandle}`}
+              onClick={() => setSheetExpanded(v => !v)}
+              onTouchStart={handleSheetHandleTouchStart}
+              onTouchEnd={handleSheetHandleTouchEnd}
+            >
+              <span className={styles.sheetHandleBar} />
+              pinned ({pins.length}) <span aria-hidden="true">{sheetExpanded ? '▾' : '▴'}</span>
+            </p>
             {pins.length === 0 && <p className={styles.hint}>no pins yet</p>}
             {pins.length > 0 && (
               <div className={styles.pinnedList}>

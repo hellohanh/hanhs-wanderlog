@@ -627,6 +627,30 @@
     padding-right: 30px;
   }
 
+  /* The "pinned" title doubles as the sheet's drag/tap handle on
+     mobile (Session 24) — see the comment above it in MapView.tsx.
+     Larger touch target + a visible grip bar so it reads as
+     draggable, not just a label. Inert styling-only on desktop,
+     where this class is still applied but the media query doesn't
+     match. */
+  .sheetHandle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 4px 0 10px;
+    margin: -4px 0 6px;
+    touch-action: none;
+  }
+
+  .sheetHandleBar {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border-strong);
+  }
+
   /* Larger touch targets for anything tapped directly on the map screen */
   .tiltControls {
     grid-template-columns: repeat(2, 40px);
