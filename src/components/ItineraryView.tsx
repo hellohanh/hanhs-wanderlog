@@ -1315,7 +1315,13 @@ export default function ItineraryView({ tripId, trip }: Props) {
       )}
 
       {legForm && (
-        <div className={styles.popupBackdrop} onClick={() => setLegForm(null)}>
+        // Session 24: click-outside-closes was silently discarding
+        // whatever the user had typed — confirmed with the user this
+        // should require an explicit Cancel instead. No onClick here
+        // (unlike the other popupBackdrop uses below, which the user
+        // did NOT ask to change) — the form's own "cancel" button
+        // (and Save) are now the only ways to close this one.
+        <div className={styles.popupBackdrop}>
           <div className={styles.popupCard} onClick={e => e.stopPropagation()}>
             <TravelLegForm
               form={legForm}

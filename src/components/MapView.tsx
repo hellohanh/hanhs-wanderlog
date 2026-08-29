@@ -656,6 +656,15 @@ export default function MapView({ tripId }: Props) {
     el.style.cssText =
       'font-family:"Segoe UI",sans-serif;min-width:200px;max-width:260px;position:relative;' +
       'background:#fff;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.25);padding:12px 24px 12px 12px;'
+    // Without this, clicks on anything inside the popup (buttons,
+    // links, the note textarea) fall through to the MAP's own click
+    // handler underneath — which is what "+ add note" was actually
+    // triggering: the map's click listener opens a brand-new draft
+    // pin AND clears selectedPin, since it has no way to know the
+    // click originated on our overlay content rather than the map
+    // itself. This is Google's own documented fix for exactly this
+    // situation with custom OverlayView elements.
+    google.maps.OverlayView.preventMapHitsAndGesturesFrom(el)
     el.innerHTML = `
       <p style="margin:0;font-size:15px;font-weight:600;">${esc(selectedPin.name)}</p>
       ${rows.join('')}
