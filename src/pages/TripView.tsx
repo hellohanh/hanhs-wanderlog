@@ -27,6 +27,8 @@ export default function TripView() {
   const [editEnd, setEditEnd] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
 
+  const [loadError, setLoadError] = useState(false)
+
   useEffect(() => {
     if (!tripId) return
     loadTrip(tripId)
@@ -35,7 +37,15 @@ export default function TripView() {
   async function loadTrip(id: string) {
     const { data, error } = await supabase.from('trips').select('*').eq('id', id).single()
     if (error) {
+      // Session 23: this used to fail silently (console.error only),
+      // leaving `trip` null while the rest of the page — including the
+      // map tab, which never checked `trip` before rendering — carried
+      // on rendering a normal-looking empty shell. That masked a real
+      // access problem as an ordinary "no pins yet" trip, which is
+      // exactly what caused tonight's long, confusing troubleshooting
+      // thread. Now surfaced as an explicit, visible state instead.
       console.error('Failed to load trip', error)
+      setLoadError(true)
       return
     }
     setTrip(data)
@@ -85,6 +95,18 @@ export default function TripView() {
   }
 
   if (!tripId) return null
+
+  if (loadError) {
+    return (
+      <div className={styles.page}>
+        <Link to="/" className={styles.backLink}>← trips</Link>
+        <p className={styles.tripMeta}>
+          Can't access this trip — you may not be a member, or the link may be wrong.
+          Try opening the invite link you were sent again.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className={styles.page}>
@@ -159,7 +181,7 @@ export default function TripView() {
       </nav>
 
       <div className={styles.content}>
-        {activeTab === 'map' && <MapView tripId={tripId} />}
+        {activeTab === 'map' && trip && <MapView tripId={tripId} />}
         {activeTab === 'itinerary' && trip && <ItineraryView tripId={tripId} trip={trip} />}
       </div>
     </div>
