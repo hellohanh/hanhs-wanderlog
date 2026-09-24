@@ -192,6 +192,9 @@ export default function MapView({ tripId }: Props) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const overlaysRef = useRef<google.maps.OverlayView[]>([])
+  // Guards the one-time initial map center/zoom to the trip's first
+  // pin — see the comment where it's used below (Session 26).
+  const hasCenteredOnLoadRef = useRef(false)
   const [mapReady, setMapReady] = useState(false)
   const [pins, setPins] = useState<Pin[]>([])
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null)
@@ -548,7 +551,20 @@ export default function MapView({ tripId }: Props) {
       overlaysRef.current.push(overlay)
     })
 
-    if (pins.length > 0) {
+    // Session 26: this used to re-run on EVERY pins change — including
+    // after editing a pin's name/icon, since saveEditName() reloads
+    // the whole pins array, which re-triggers this whole effect. That
+    // meant editing ANY pin re-panned the map to pins[0] (whichever
+    // pin happens to be first in an unordered query result — not the
+    // one just edited) at a fixed zoom of 12, yanking the view away
+    // from wherever the user actually was. This was only ever meant
+    // to center the map once, when the trip's pins first load — the
+    // pin the user is actively editing already gets its own panTo
+    // when selected (see the click handler a few lines up), so once
+    // gated to first-load-only, editing a pin naturally leaves the
+    // map exactly where it already was.
+    if (pins.length > 0 && !hasCenteredOnLoadRef.current) {
+      hasCenteredOnLoadRef.current = true
       const first = pins[0]
       map.panTo({ lat: first.lat, lng: first.lng })
       map.setZoom(12)

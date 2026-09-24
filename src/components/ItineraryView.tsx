@@ -1315,7 +1315,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
       )}
 
       {legForm && (
-        // Session 24: click-outside-closes was silently discarding
+        // Session 25: click-outside-closes was silently discarding
         // whatever the user had typed — confirmed with the user this
         // should require an explicit Cancel instead. No onClick here
         // (unlike the other popupBackdrop uses below, which the user

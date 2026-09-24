@@ -77,6 +77,27 @@
   overflow: hidden;
 }
 
+/* Desktop only (matches the existing mobile breakpoint below) — caps
+   the map+sidebar box to the remaining viewport height instead of
+   letting it grow with however many pins are in the list. Before
+   this, .wrapper had no real height, so a long pinned list stretched
+   the whole flex row taller — sidebar AND map both — since .mapPane
+   is flex:1 inside the same row. .sidebar already had overflow-y:auto
+   set, but with nothing bounding its own height it never had anything
+   to scroll within; this is what actually activates it. 220px is an
+   estimate for everything above this box on the trip page (header,
+   trip meta, tabs, page padding) — adjust if it leaves too much or
+   too little gap under a real header. min-height keeps this from
+   getting uselessly short on a small/short browser window. Mobile is
+   deliberately left untouched — its bottom sheet already has its own
+   peek/full sizing (see the @media block further down). */
+@media (min-width: 769px) {
+  .wrapper {
+    height: calc(100vh - 220px);
+    min-height: 500px;
+  }
+}
+
 .mapPane {
   position: relative;
   flex: 1;

@@ -390,11 +390,15 @@ export default function Dashboard() {
         exported_at: new Date().toISOString(),
         trips: backupTrips
       }
+      // Total across every trip in this backup — in the filename so
+      // it's visible at a glance in a file listing (e.g. Downloads)
+      // without having to open the file, per the user's request.
+      const totalPins = backupTrips.reduce((sum, t) => sum + t.pins.length, 0)
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `hanhs-wanderlog-backup-${new Date().toISOString().slice(0, 10)}.json`
+      a.download = `hanhs-wanderlog-backup-${new Date().toISOString().slice(0, 10)}-${totalPins}pins.json`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
