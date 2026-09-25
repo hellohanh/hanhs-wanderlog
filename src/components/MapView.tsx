@@ -442,6 +442,17 @@ export default function MapView({ tripId }: Props) {
     map.setHeading((current + amount + 360) % 360)
   }
 
+  // "Reset orientation" (Session 31) resets both heading and tilt —
+  // not just heading — since the point is getting back to the
+  // default flat, north-up view after using the rotate/tilt controls,
+  // not just undoing rotation while leaving an odd tilt in place.
+  function resetOrientation() {
+    const map = mapRef.current
+    if (!map) return
+    map.setHeading(0)
+    map.setTilt(0)
+  }
+
   // Roadmap/satellite toggle (Session 28). Works the same way whether
   // or not the map has a vector Map ID applied — mapTypeId switches
   // independently of that, and Google renders real satellite
@@ -1175,6 +1186,14 @@ export default function MapView({ tripId }: Props) {
               </button>
               <button type="button" title="Rotate right" onClick={() => adjustHeading(20)}>
                 ⟳
+              </button>
+              <button
+                type="button"
+                className={styles.resetOrientationButton}
+                title="Reset to north, flat view"
+                onClick={resetOrientation}
+              >
+                N
               </button>
             </div>
           )}

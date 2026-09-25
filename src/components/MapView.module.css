@@ -130,6 +130,16 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
+/* Session 31 — resets heading + tilt back to north-up/flat. Spans
+   both columns of the 2x2 tilt/rotate grid above it, as its own row,
+   rather than trying to force a 5th button into that grid. */
+.resetOrientationButton {
+  grid-column: span 2;
+  width: auto !important;
+  font-weight: 700;
+  font-size: 13px !important;
+}
+
 .tiltControls button:hover {
   background: var(--surface-2);
 }
