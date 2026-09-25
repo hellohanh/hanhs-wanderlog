@@ -290,16 +290,25 @@
   background: var(--surface-1);
   display: flex;
   flex-direction: column;
-  /* No overflow-y here on purpose — this panel used to scroll as a
-     whole, nested inside a SECOND scrollable box (the shared
-     TimelineZone's own .timelineScroll), which mismatched badly at
-     higher browser zoom levels (a smaller effective viewport meant
-     the inner box's fixed max-height no longer fit, clipping content
-     with no obvious way to reach it). Now this panel is purely a flex
-     column — the day tabs/toggle/flight cards keep their natural
-     size, and only the timeline itself (flex: 1 via the shared
-     .timelineWrapper) scrolls, clipped correctly to whatever space is
-     actually left. */
+  /* min-height: 0 — this panel is itself a flex ROW item inside
+     .wrapper (Session 36). Without it, a flex item won't shrink below
+     its own content's natural height even when the row is shorter —
+     the same gotcha .timelineWrapper already works around one level
+     down (its own min-height: 0, see ItineraryTimeline.module.css).
+     Both levels need it; fixing only the inner one still left the
+     outer .itineraryPanel refusing to shrink to .wrapper's actual
+     height at high browser zoom, which is what kept clipping content
+     with no way to reach it even after E87. No overflow-y here on
+     purpose — this panel used to scroll as a whole, nested inside a
+     SECOND scrollable box (the shared TimelineZone's own
+     .timelineScroll), which mismatched badly at higher browser zoom
+     levels (a smaller effective viewport meant the inner box's fixed
+     max-height no longer fit, clipping content with no obvious way to
+     reach it). Now this panel is purely a flex column — the day
+     tabs/toggle/flight cards keep their natural size, and only the
+     timeline itself (flex: 1 via the shared .timelineWrapper) scrolls,
+     clipped correctly to whatever space is actually left. */
+  min-height: 0;
 }
 
 .itineraryPanelHeader {
