@@ -226,6 +226,18 @@ export default function MapView({ tripId }: Props) {
   // mode if a different pin gets clicked while editing.
   const [noteEditingPinId, setNoteEditingPinId] = useState<string | null>(null)
   const [savingNote, setSavingNote] = useState(false)
+  // Name/icon editing directly in the map popup (Session 29) — kept
+  // fully separate from the sidebar's own editingName/editIconValue
+  // (used by startEditName/saveEditName above), rather than sharing
+  // that state. On desktop the popup and sidebar are visible at the
+  // same time; sharing state would open BOTH edit forms at once for
+  // the same pin the moment either one was triggered, which reads as
+  // a bug, not a feature. The underlying update is identical either
+  // way (pins.name + pins.icon) — just two independent front ends
+  // onto the same save.
+  const [popupEditingPinId, setPopupEditingPinId] = useState<string | null>(null)
+  const [popupEditIcon, setPopupEditIcon] = useState<string | undefined>(undefined)
+  const [savingPopupEdit, setSavingPopupEdit] = useState(false)
   const [draftPin, setDraftPin] = useState<DraftPin | null>(null)
   const [nearbyEats, setNearbyEats] = useState<{ name: string; lat: number; lng: number }[]>([])
   const [loadingEats, setLoadingEats] = useState(false)
@@ -349,6 +361,32 @@ export default function MapView({ tripId }: Props) {
     }
     setNoteEditingPinId(null)
     setSelectedPin(prev => (prev && prev.id === pinId ? { ...prev, notes: trimmed } : prev))
+    loadPins()
+  }
+
+  function startPopupEditName(pin: Pin) {
+    setPopupEditIcon(pin.icon ?? undefined)
+    setPopupEditingPinId(pin.id)
+  }
+
+  // Same update as the sidebar's saveEditName (pins.name + pins.icon),
+  // just triggered from the popup's own separate state — see the
+  // comment by popupEditingPinId above for why they're not shared.
+  async function savePopupEditName(pinId: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setSavingPopupEdit(true)
+    const { error } = await supabase
+      .from('pins')
+      .update({ name: trimmed, icon: popupEditIcon ?? null })
+      .eq('id', pinId)
+    setSavingPopupEdit(false)
+    if (error) {
+      console.error('Failed to rename pin', error)
+      return
+    }
+    setSelectedPin(prev => (prev && prev.id === pinId ? { ...prev, name: trimmed, icon: popupEditIcon ?? null } : prev))
+    setPopupEditingPinId(null)
     loadPins()
   }
 
@@ -700,6 +738,41 @@ export default function MapView({ tripId }: Props) {
              <button id="wanderlog-note-edit" type="button" style="font-size:12px;color:#1a73e8;background:none;border:none;cursor:pointer;padding:0;">+ add note</button>
            </div>`
 
+    // Name + icon-variant editing directly in the popup (Session 29) —
+    // same underlying update as the sidebar's rename/icon-picker
+    // (pins.name + pins.icon), built the same raw-DOM way as the note
+    // editor above, with its own independent state (see
+    // popupEditingPinId's declaration for why it's not shared with
+    // the sidebar's editingName).
+    const isEditingPopupName = popupEditingPinId === selectedPin.id
+    const variants = ICON_VARIANTS[selectedPin.category]
+    const cfg = categoryConfig(selectedPin.category)
+    const iconPickerHtml =
+      isEditingPopupName && variants
+        ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;">
+             ${variants
+               .map(v => {
+                 const active = (popupEditIcon ?? 'general') === v.key
+                 const color = v.color ?? cfg.color
+                 return `<button type="button" class="wanderlog-popup-icon" data-key="${v.key}" title="${esc(v.label)}" style="width:26px;height:26px;border-radius:50%;border:${active ? `2px solid ${color}` : '1px solid #dadce0'};background:${color};display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;">${v.svg}</button>`
+               })
+               .join('')}
+           </div>`
+        : ''
+    const nameHtml = isEditingPopupName
+      ? `<div>
+           <input id="wanderlog-name-input" type="text" value="${esc(selectedPin.name)}" style="width:100%;font-size:15px;font-weight:600;padding:4px 6px;border:1px solid #dadce0;border-radius:4px;box-sizing:border-box;font-family:inherit;" />
+           ${iconPickerHtml}
+           <div style="display:flex;gap:8px;margin-top:4px;">
+             <button id="wanderlog-name-save" type="button" style="font-size:13px;padding:4px 10px;background:#1a73e8;color:#fff;border:none;border-radius:4px;cursor:pointer;" ${savingPopupEdit ? 'disabled' : ''}>${savingPopupEdit ? 'saving…' : 'save'}</button>
+             <button id="wanderlog-name-cancel" type="button" style="font-size:13px;padding:4px 10px;background:none;border:1px solid #dadce0;border-radius:4px;cursor:pointer;" ${savingPopupEdit ? 'disabled' : ''}>cancel</button>
+           </div>
+         </div>`
+      : `<div style="display:flex;align-items:center;gap:6px;">
+           <p style="margin:0;font-size:15px;font-weight:600;">${esc(selectedPin.name)}</p>
+           <button id="wanderlog-name-edit" type="button" aria-label="edit name" title="edit name" style="background:none;border:none;cursor:pointer;padding:2px;color:#5f6368;font-size:13px;line-height:1;">✎</button>
+         </div>`
+
     // Own container, own chrome — no InfoWindow bubble/tail/header
     // involved at all, so there's nothing reserved above the title
     // and no native close button to steal keyboard focus.
@@ -717,7 +790,7 @@ export default function MapView({ tripId }: Props) {
     // situation with custom OverlayView elements.
     google.maps.OverlayView.preventMapHitsAndGesturesFrom(el)
     el.innerHTML = `
-      <p style="margin:0;font-size:15px;font-weight:600;">${esc(selectedPin.name)}</p>
+      ${nameHtml}
       ${rows.join('')}
       <p style="margin:8px 0 0;font-size:13px;"><a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">View in Google Maps</a></p>
       ${noteHtml}
@@ -739,12 +812,33 @@ export default function MapView({ tripId }: Props) {
       const textarea = el.querySelector<HTMLTextAreaElement>('#wanderlog-note-input')
       if (textarea) saveNote(pinId, textarea.value)
     })
+    el.querySelector('#wanderlog-name-edit')?.addEventListener('click', () => startPopupEditName(selectedPin))
+    el.querySelector('#wanderlog-name-cancel')?.addEventListener('click', () => setPopupEditingPinId(null))
+    el.querySelectorAll('.wanderlog-popup-icon').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-key')
+        setPopupEditIcon(!key || key === 'general' ? undefined : key)
+      })
+    })
+    el.querySelector('#wanderlog-name-save')?.addEventListener('click', () => {
+      const input = el.querySelector<HTMLInputElement>('#wanderlog-name-input')
+      if (input) savePopupEditName(pinId, input.value)
+    })
 
     const PopupOverlay = getPinPopupOverlayClass()
     const overlay = new PopupOverlay(new google.maps.LatLng(selectedPin.lat, selectedPin.lng), el)
     overlay.setMap(map)
     popupOverlayRef.current = overlay
-  }, [selectedPin, placeDetails, loadingDetails, noteEditingPinId, savingNote])
+  }, [
+    selectedPin,
+    placeDetails,
+    loadingDetails,
+    noteEditingPinId,
+    savingNote,
+    popupEditingPinId,
+    popupEditIcon,
+    savingPopupEdit
+  ])
 
   // Name/address/phone for the selected pin. Search-added pins carry a
   // real Google place_id (captured at creation, see startDraftFromSearchResult)
