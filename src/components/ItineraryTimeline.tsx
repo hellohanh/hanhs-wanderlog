@@ -407,7 +407,9 @@ export function TimelineZone({
         <div className={styles.timelineTrack} style={{ height: 24 * HOUR_PX }}>
           {hours.map(h => (
             <div key={h} className={styles.hourRow} style={{ top: h * HOUR_PX, height: HOUR_PX }}>
-              <span className={styles.hourLabel}>{minutesToLabel(h * 60)}</span>
+              <span className={styles.hourLabel} style={gutter ? { width: gutter } : undefined}>
+                {minutesToLabel(h * 60)}
+              </span>
               <div className={styles.halfHourLine} />
             </div>
           ))}
