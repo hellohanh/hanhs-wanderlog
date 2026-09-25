@@ -102,7 +102,17 @@
    further down). */
 @media (min-width: 769px) {
   .wrapper {
-    height: calc(100vh - 220px);
+    /* Session 37: vh -> dvh. The user confirmed the inner timeline
+       scroll genuinely does reach the bottom at 150% zoom (the
+       scrollbar sits at its true end) — the box's own rendered height
+       is simply shorter than what its content needs, clipping the
+       bottom visually even though the scroll position is correct.
+       That's a signature symptom of vh's known inconsistency with
+       non-100% browser zoom (a long-documented cross-browser quirk,
+       not specific to this page). dvh (dynamic viewport height) is
+       the modern, zoom-accurate replacement — same "100% of the
+       visible viewport" intent, without vh's zoom-rounding quirks. */
+    height: calc(100dvh - 220px);
     min-height: 360px;
   }
 
