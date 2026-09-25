@@ -184,6 +184,18 @@ export function pinIconLabel(category: PinCategory, iconKey: string | null): str
   return match?.label ?? variants[0].label
 }
 
+// The unit a pin filters by (Session 27): for a category with icon
+// variants (see ICON_VARIANTS), that's the specific variant — e.g.
+// "dining:street_food" — so picking "Street food" only matches street
+// food pins, not every dining pin. For a category with no variants,
+// there's nothing finer to filter by, so it's just the category
+// itself — e.g. "shopping". A pin with no stored icon in a variant
+// category is treated as its "general" variant, matching how
+// pinIconSvg/pinBadgeColor already resolve a null icon.
+export function pinFilterKey(pin: Pin): string {
+  return ICON_VARIANTS[pin.category] ? `${pin.category}:${pin.icon ?? 'general'}` : pin.category
+}
+
 export interface PinCategoryGroup {
   key: PinCategory
   label: string

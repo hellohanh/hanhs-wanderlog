@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { loadGoogleMaps } from '../lib/googleMapsLoader'
-import { CATEGORIES, ICON_VARIANTS, categoryConfig, groupPinsByCategory, pinBadgeColor, pinIconSvg, type PinCategory } from '../lib/pinCategories'
+import { CATEGORIES, ICON_VARIANTS, categoryConfig, groupPinsByCategory, pinBadgeColor, pinFilterKey, pinIconSvg, type PinCategory } from '../lib/pinCategories'
 import type { Pin } from '../types'
 import styles from './MapView.module.css'
 
@@ -197,6 +197,26 @@ export default function MapView({ tripId }: Props) {
   const hasCenteredOnLoadRef = useRef(false)
   const [mapReady, setMapReady] = useState(false)
   const [pins, setPins] = useState<Pin[]>([])
+  // Category/variant dimming filter (Session 27) — a pin is dimmed on
+  // the map and in the pinned list when filters are active AND its
+  // own filter key (see pinFilterKey) isn't one of the selected ones.
+  // Multi-select, per the user's explicit choice: picking several
+  // keeps all of them highlighted, not just the most recent.
+  const [selectedFilters, setSelectedFilters] = useState<Set<string>>(new Set())
+
+  function toggleFilter(key: string) {
+    setSelectedFilters(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function isDimmed(pin: Pin) {
+    return selectedFilters.size > 0 && !selectedFilters.has(pinFilterKey(pin))
+  }
+
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null)
   // Note editing (Session 24) — pins.notes was added back in Session
   // 20 for this exact purpose (a note about the PLACE, on the map
@@ -524,6 +544,7 @@ export default function MapView({ tripId }: Props) {
       const el = document.createElement('div')
       el.className = styles.pinMarker
       el.title = `${cfg.label}: ${pin.name}`
+      if (isDimmed(pin)) el.style.opacity = '0.25'
       el.innerHTML = `
         <span class="${styles.pinOuter}">
           <span class="${styles.pinInner}" style="background:${badgeColor}">
@@ -569,7 +590,7 @@ export default function MapView({ tripId }: Props) {
       map.panTo({ lat: first.lat, lng: first.lng })
       map.setZoom(12)
     }
-  }, [pins, mapReady])
+  }, [pins, mapReady, selectedFilters])
 
   useEffect(() => {
     if (!selectedPin) {
@@ -1270,23 +1291,94 @@ export default function MapView({ tripId }: Props) {
             {pins.length === 0 && <p className={styles.hint}>no pins yet</p>}
             {pins.length > 0 && (
               <div className={styles.pinnedList}>
-                {groupPinsByCategory(pins).map(group => (
-                  <div key={group.key} className={styles.pinnedGroup}>
-                    <p className={styles.pinnedGroupLabel}>{group.label}</p>
-                    {group.pins.map(pin => (
-                      <button
-                        key={pin.id}
-                        type="button"
-                        className={styles.pinnedRow}
-                        data-active={selectedPin?.id === pin.id}
-                        onClick={() => selectPin(pin)}
-                      >
-                        <span className={styles.pinnedDot} style={{ backgroundColor: pinBadgeColor(pin.category, pin.icon) }} />
-                        <span className={styles.pinnedName}>{pin.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                ))}
+                {selectedFilters.size > 0 && (
+                  <button
+                    type="button"
+                    className={styles.clearFiltersButton}
+                    onClick={() => setSelectedFilters(new Set())}
+                  >
+                    clear filter{selectedFilters.size > 1 ? 's' : ''} ({selectedFilters.size})
+                  </button>
+                )}
+                {groupPinsByCategory(pins).map(group => {
+                  const variants = ICON_VARIANTS[group.key]
+                  if (!variants) {
+                    // No sub-types for this category — the category
+                    // itself is the only thing there is to filter by.
+                    const filterKey = group.key
+                    return (
+                      <div key={group.key} className={styles.pinnedGroup}>
+                        <button
+                          type="button"
+                          className={styles.pinnedGroupLabel}
+                          data-filter-active={selectedFilters.has(filterKey)}
+                          onClick={() => toggleFilter(filterKey)}
+                        >
+                          {group.label}
+                        </button>
+                        {group.pins.map(pin => (
+                          <button
+                            key={pin.id}
+                            type="button"
+                            className={styles.pinnedRow}
+                            data-active={selectedPin?.id === pin.id}
+                            data-dimmed={isDimmed(pin)}
+                            onClick={() => selectPin(pin)}
+                          >
+                            <span className={styles.pinnedDot} style={{ backgroundColor: pinBadgeColor(pin.category, pin.icon) }} />
+                            <span className={styles.pinnedName}>{pin.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  }
+                  // Has variants (e.g. Dining -> Street food, Noodle/pho,
+                  // ...) — each variant present in this trip's pins gets
+                  // its own clickable sub-label; the category label
+                  // itself stays a plain (non-clickable) heading, since
+                  // "all of Dining" isn't a single filterable unit here.
+                  const byVariant = new Map<string, Pin[]>()
+                  for (const pin of group.pins) {
+                    const vKey = pin.icon ?? 'general'
+                    if (!byVariant.has(vKey)) byVariant.set(vKey, [])
+                    byVariant.get(vKey)!.push(pin)
+                  }
+                  return (
+                    <div key={group.key} className={styles.pinnedGroup}>
+                      <p className={styles.pinnedGroupLabel}>{group.label}</p>
+                      {variants
+                        .filter(v => byVariant.has(v.key))
+                        .map(variant => {
+                          const filterKey = `${group.key}:${variant.key}`
+                          return (
+                            <div key={variant.key} className={styles.pinnedSubGroup}>
+                              <button
+                                type="button"
+                                className={styles.pinnedVariantLabel}
+                                data-filter-active={selectedFilters.has(filterKey)}
+                                onClick={() => toggleFilter(filterKey)}
+                              >
+                                {variant.label}
+                              </button>
+                              {byVariant.get(variant.key)!.map(pin => (
+                                <button
+                                  key={pin.id}
+                                  type="button"
+                                  className={styles.pinnedRow}
+                                  data-active={selectedPin?.id === pin.id}
+                                  data-dimmed={isDimmed(pin)}
+                                  onClick={() => selectPin(pin)}
+                                >
+                                  <span className={styles.pinnedDot} style={{ backgroundColor: pinBadgeColor(pin.category, pin.icon) }} />
+                                  <span className={styles.pinnedName}>{pin.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )
+                        })}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

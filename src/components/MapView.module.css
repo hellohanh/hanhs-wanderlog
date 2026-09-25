@@ -405,6 +405,58 @@
   margin: 0 0 2px 4px;
 }
 
+/* .pinnedGroupLabel is a <button> for categories with no icon variants
+   (the category itself is the filterable unit) and stays a plain <p>
+   for categories that DO have variants (see .pinnedVariantLabel below
+   for those) — reset default button chrome so both render identically
+   either way. */
+button.pinnedGroupLabel {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+button.pinnedGroupLabel[data-filter-active='true'],
+.pinnedVariantLabel[data-filter-active='true'] {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.pinnedSubGroup {
+  margin-bottom: 4px;
+}
+
+.pinnedVariantLabel {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 4px 0 2px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.clearFiltersButton {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: center;
+}
+
 .pinnedRow {
   display: flex;
   align-items: center;
@@ -425,6 +477,10 @@
 .pinnedRow[data-active='true'] {
   background: var(--surface-2);
   font-weight: 500;
+}
+
+.pinnedRow[data-dimmed='true'] {
+  opacity: 0.35;
 }
 
 .pinnedDot {
