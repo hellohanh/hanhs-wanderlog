@@ -466,3 +466,40 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* Session 43 — hover-detail popup, shown on any stop or leg block
+   regardless of whether the block itself is too compressed to show
+   its own text. Rendered via a portal to document.body (see
+   HoverPopupPortal in ItineraryTimeline.tsx) with position: fixed
+   coordinates computed from the hovered block's real screen position
+   — NOT a plain CSS-anchored child, because the timeline lives inside
+   a scrolling/clipped container that would otherwise invisibly clip
+   it the moment it tried to extend past that boundary. Styled to
+   match the existing map pin popup: white card, hairline border,
+   12px radius, soft shadow. */
+.blockHoverPopup {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.blockHoverPopupTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.blockHoverPopupLine {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0 0 2px;
+}
+
+.blockHoverPopupLine:last-child {
+  margin-bottom: 0;
+}

@@ -7,7 +7,8 @@
 // mutation functions (insert/update/delete against itinerary_stops) —
 // this file only holds the presentational + drag-source/drop-target
 // pieces, not the Supabase writes themselves.
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { groupPinsByCategory, pinBadgeColor } from '../lib/pinCategories'
 import {
@@ -33,6 +34,52 @@ import type { Pin, ItineraryStop, TravelLeg } from '../types'
 import styles from './ItineraryTimeline.module.css'
 
 export type StopWithPin = ItineraryStop & { pin: Pin }
+
+// Hover-detail popups (Session 43) — every timeline block, stop or
+// leg, shows a small detail card on hover, regardless of whether the
+// block itself is too compressed to show its own full text. Rendered
+// via a portal to document.body rather than as a normal positioned
+// child, because the timeline sits inside a scrolling/clipped
+// container (.timelineScroll or .timelineWrapper's overflow: hidden)
+// — a plain CSS-anchored popup would be invisibly clipped the moment
+// it tried to extend past that boundary. Position is computed from
+// the hovered block's real getBoundingClientRect() on mouseenter, so
+// it's correct regardless of which page/panel width hosts it; flips
+// to the block's left side automatically if there isn't room on the
+// right (common in the narrow map-page panel).
+function useBlockHoverPopup<T extends HTMLElement>() {
+  const ref = useRef<T>(null)
+  const [style, setStyle] = useState<React.CSSProperties | null>(null)
+  const popupWidth = 220
+
+  function handleMouseEnter() {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const flipLeft = rect.right + 8 + popupWidth > window.innerWidth
+    setStyle({
+      position: 'fixed',
+      top: rect.top,
+      ...(flipLeft ? { right: window.innerWidth - rect.left + 8 } : { left: rect.right + 8 }),
+      width: popupWidth
+    })
+  }
+  function handleMouseLeave() {
+    setStyle(null)
+  }
+
+  return { ref, style, handleMouseEnter, handleMouseLeave }
+}
+
+function HoverPopupPortal({ style, children }: { style: React.CSSProperties | null; children: React.ReactNode }) {
+  if (!style) return null
+  return createPortal(
+    <div className={styles.blockHoverPopup} style={style}>
+      {children}
+    </div>,
+    document.body
+  )
+}
 
 // Shared between the card list (TravelCardFull) and the timeline
 // blocks (TimelineLegBlock/TimelineContinuationBlock) — the actual
@@ -146,6 +193,39 @@ export function TravelCardFull({ leg, onEdit }: { leg: TravelLeg; onEdit: () => 
   )
 }
 
+// Session 43 — hover-popup content for a leg block. Deliberately
+// shows the title ALONGSIDE the route/carrier/time detail, unlike
+// TravelCardContent's own main-card rendering where a set title
+// REPLACES the route line — the user asked for both together here,
+// since the hover popup's whole purpose is showing everything at
+// once regardless of how the block itself is condensed.
+function LegHoverContent({ leg, cfg }: { leg: TravelLeg; cfg: (typeof LEG_MODE_CONFIG)[TravelLeg['mode']] }) {
+  return (
+    <>
+      {leg.title && <p className={styles.blockHoverPopupTitle}>{leg.title}</p>}
+      <p className={leg.title ? styles.blockHoverPopupLine : styles.blockHoverPopupTitle}>
+        {formatLocationLabel(leg.from_location)} → {formatLocationLabel(leg.to_location)}
+      </p>
+      <p className={styles.blockHoverPopupLine}>
+        {leg.carrier || cfg.label}
+        {leg.reference ? ` · ${leg.reference}` : ''}
+      </p>
+      {(leg.from_time || leg.to_time) && (
+        <p className={styles.blockHoverPopupLine}>
+          {leg.from_time?.slice(0, 5) ?? ''}
+          {leg.from_timezone && leg.from_date && leg.from_time
+            ? ` ${timezoneAbbreviation(leg.from_timezone, leg.from_date, leg.from_time)}`
+            : ''}
+          {leg.to_time ? ` → ${leg.to_time.slice(0, 5)}` : ''}
+          {leg.to_timezone && leg.to_date && leg.to_time
+            ? ` ${timezoneAbbreviation(leg.to_timezone, leg.to_date, leg.to_time)}`
+            : ''}
+        </p>
+      )}
+    </>
+  )
+}
+
 export function CarrierBadge({ mode, carrier, size = 22 }: { mode: TravelLeg['mode']; carrier: string | null; size?: number }) {
   const [failed, setFailed] = useState(false)
   const cfg = LEG_MODE_CONFIG[mode]
@@ -248,13 +328,19 @@ export function TimelineStopBlock({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `tstop-${stop.id}` })
   const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
   const { top, height } = stopBlockGeometry(stop)
+  const hover = useBlockHoverPopup<HTMLDivElement>()
 
   return (
     <div
-      ref={setNodeRef}
+      ref={node => {
+        setNodeRef(node)
+        ;(hover.ref as React.MutableRefObject<HTMLDivElement | null>).current = node
+      }}
       className={styles.timelineBlock}
       style={{ top, height, backgroundColor: badgeColor, opacity: isDragging ? 0.4 : 1, ...blockPositionStyle(layout, gutter) }}
       onClick={onClick}
+      onMouseEnter={hover.handleMouseEnter}
+      onMouseLeave={hover.handleMouseLeave}
       {...listeners}
       {...attributes}
     >
@@ -269,6 +355,14 @@ export function TimelineStopBlock({
           migration 012) — not the pin, so the same place scheduled on two
           different days can carry two different notes. */}
       {stop.notes && <p className={styles.timelineBlockNote}>{stop.notes}</p>}
+      <HoverPopupPortal style={hover.style}>
+        <p className={styles.blockHoverPopupTitle}>{stop.pin.name}</p>
+        <p className={styles.blockHoverPopupLine}>
+          {stop.start_time?.slice(0, 5)}
+          {stop.end_time ? `–${stop.end_time.slice(0, 5)}` : ''}
+        </p>
+        {stop.notes && <p className={styles.blockHoverPopupLine}>{stop.notes}</p>}
+      </HoverPopupPortal>
     </div>
   )
 }
@@ -285,6 +379,7 @@ export function TimelineLegBlock({
   gutter?: number
 }) {
   const cfg = LEG_MODE_CONFIG[leg.mode]
+  const hover = useBlockHoverPopup<HTMLDivElement>()
 
   // Positioned by literal local-clock readings (Option B, confirmed
   // with the user) rather than real elapsed duration — this is what
@@ -301,6 +396,7 @@ export function TimelineLegBlock({
   // leg only happens through an intentional edit.
   return (
     <div
+      ref={hover.ref}
       className={styles.timelineLegCard}
       style={{
         top,
@@ -311,9 +407,14 @@ export function TimelineLegBlock({
         ...blockPositionStyle(layout, gutter)
       }}
       onClick={onClick}
+      onMouseEnter={hover.handleMouseEnter}
+      onMouseLeave={hover.handleMouseLeave}
     >
       <TravelCardContent leg={leg} />
       {crossesMidnight && <span className={styles.timelineBlockContinues}>continues next day →</span>}
+      <HoverPopupPortal style={hover.style}>
+        <LegHoverContent leg={leg} cfg={cfg} />
+      </HoverPopupPortal>
     </div>
   )
 }
@@ -334,6 +435,7 @@ export function TimelineContinuationBlock({
   gutter?: number
 }) {
   const cfg = LEG_MODE_CONFIG[leg.mode]
+  const hover = useBlockHoverPopup<HTMLDivElement>()
   const { top, height: geometryHeight } = continuationBlockGeometry(leg)
   // +30 to account for the extra top padding (.timelineContinuationCard)
   // that makes room for the "continued from" label.
@@ -341,14 +443,20 @@ export function TimelineContinuationBlock({
 
   return (
     <div
+      ref={hover.ref}
       className={`${styles.timelineLegCard} ${styles.timelineContinuationCard}`}
       style={{ top, height, borderLeftColor: cfg.color, cursor: 'pointer', touchAction: 'pan-y', ...blockPositionStyle(layout, gutter) }}
       onClick={onClick}
+      onMouseEnter={hover.handleMouseEnter}
+      onMouseLeave={hover.handleMouseLeave}
     >
       <TravelCardContent leg={leg} showDeparture={false} />
       <span className={styles.timelineBlockContinuedFrom}>
         ← continued from {leg.from_date ? formatDayDate(leg.from_date) : 'yesterday'}
       </span>
+      <HoverPopupPortal style={hover.style}>
+        <LegHoverContent leg={leg} cfg={cfg} />
+      </HoverPopupPortal>
     </div>
   )
 }
