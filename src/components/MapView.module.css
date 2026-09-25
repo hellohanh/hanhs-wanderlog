@@ -88,13 +88,22 @@
    estimate for everything above this box on the trip page (header,
    trip meta, tabs, page padding) — adjust if it leaves too much or
    too little gap under a real header. min-height keeps this from
-   getting uselessly short on a small/short browser window. Mobile is
-   deliberately left untouched — its bottom sheet already has its own
-   peek/full sizing (see the @media block further down). */
+   getting uselessly short on a small/short browser window — but it's
+   deliberately LOW (360px, not the original 500px) because at high
+   browser zoom (e.g. 150%) the effective vh shrinks enough that a
+   500px floor could exceed the actual viewport height, pushing
+   .wrapper (and the itinerary panel inside it) below the fold with no
+   way to reach it — hovering over the itinerary panel's own internal
+   scroll captures the wheel before it ever reaches the page behind
+   it. The whole point of this rule is that nothing here should ever
+   need page-level scrolling; every panel scrolls internally instead
+   (Session 35). Mobile is deliberately left untouched — its bottom
+   sheet already has its own peek/full sizing (see the @media block
+   further down). */
 @media (min-width: 769px) {
   .wrapper {
     height: calc(100vh - 220px);
-    min-height: 500px;
+    min-height: 360px;
   }
 
   /* Session 32: moves .sidebar to visually appear FIRST (left side)
@@ -278,10 +287,23 @@
 .itineraryPanel {
   border-left: 1px solid var(--border);
   padding: 12px;
-  overflow-y: auto;
   background: var(--surface-1);
   display: flex;
   flex-direction: column;
+  /* No overflow-y here on purpose — this panel used to scroll as a
+     whole, nested inside a SECOND scrollable box (the shared
+     TimelineZone's own .timelineScroll), which mismatched badly at
+     higher browser zoom levels (a smaller effective viewport meant
+     the inner box's fixed max-height no longer fit, clipping content
+     with no obvious way to reach it). Now this panel is purely a flex
+     column — the day tabs/toggle/flight cards keep their natural
+     size, and only the timeline itself (flex: 1 via the shared
+     .timelineWrapper) scrolls, clipped correctly to whatever space is
+     actually left. */
+}
+
+.itineraryPanelHeader {
+  flex-shrink: 0;
 }
 
 .dayTabs {
