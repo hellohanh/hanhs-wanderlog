@@ -116,11 +116,6 @@ export const ICON_VARIANTS: Partial<Record<PinCategory, IconVariant[]>> = {
       svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16l-2-5H6l-2 5z"/><path d="M6 21V11h12v10"/><circle cx="9" cy="21" r="1" fill="white" stroke="none"/><circle cx="15" cy="21" r="1" fill="white" stroke="none"/></svg>`
     },
     {
-      key: 'noodle_pho',
-      label: 'Noodle/pho',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16a8 6 0 0 1-16 0z"/><path d="M9 6c0 1-1 1-1 2"/><path d="M13 6c0 1-1 1-1 2"/></svg>`
-    },
-    {
       key: 'bbq_grill',
       label: 'BBQ/grill',
       svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="8" rx="1"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="8" y1="6" x2="8" y2="10"/><line x1="16" y1="6" x2="16" y2="10"/></svg>`
@@ -144,6 +139,31 @@ export const ICON_VARIANTS: Partial<Record<PinCategory, IconVariant[]>> = {
       key: 'bar_pub',
       label: 'Bar/pub',
       svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h11v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6z"/><path d="M16 8h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><line x1="5" y1="6" x2="16" y2="6"/></svg>`
+    },
+    {
+      key: 'pho',
+      label: 'Phở',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16a8 6 0 0 1-16 0z"/><path d="M9 6c0 1-1 1-1 2"/><path d="M13 6c0 1-1 1-1 2"/></svg>`
+    },
+    {
+      key: 'bun',
+      label: 'Bún/Mì',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16a8 6 0 0 1-16 0z"/><path d="M7 9l2-2M11 9l1-3M15 9l2-2"/></svg>`
+    },
+    {
+      key: 'banh_mi',
+      label: 'Bánh mì',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="13" rx="9" ry="4"/><path d="M5 13c2-3 12-3 14 0"/><path d="M8 11l1 2M12 10l1 3M16 11l1 2"/></svg>`
+    },
+    {
+      key: 'com',
+      label: 'Cơm',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="16" rx="8" ry="3"/><path d="M8 16c0-4 8-4 8 0"/></svg>`
+    },
+    {
+      key: 'lau',
+      label: 'Lẩu',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16v3a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6v-3z"/><path d="M2 11h4M18 11h4"/><path d="M9 7c0 1-1 1-1 2M15 7c0 1-1 1-1 2"/></svg>`
     }
   ]
 }
