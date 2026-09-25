@@ -148,6 +148,24 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
+/* Stacked directly below .districtsToggle, same left edge — the two
+   toggles read as a small group in the top-left corner rather than
+   scattered separately. */
+.mapTypeToggle {
+  position: absolute;
+  top: 50px;
+  left: 12px;
+  z-index: 1;
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  text-transform: capitalize;
+}
+
 .districtsToggle[data-active='true'] {
   border-color: var(--accent);
   background: var(--accent-tint);

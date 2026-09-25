@@ -402,6 +402,20 @@ export default function MapView({ tripId }: Props) {
     map.setHeading((current + amount + 360) % 360)
   }
 
+  // Roadmap/satellite toggle (Session 28). Works the same way whether
+  // or not the map has a vector Map ID applied — mapTypeId switches
+  // independently of that, and Google renders real satellite
+  // photography in place of the vector/styled roadmap tiles.
+  const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap')
+
+  function toggleMapType() {
+    const map = mapRef.current
+    if (!map) return
+    const next = mapType === 'roadmap' ? 'satellite' : 'roadmap'
+    map.setMapTypeId(next)
+    setMapType(next)
+  }
+
   // HCMC's old, informal 22-district layout (pre-July-2025 — the
   // official district system was abolished nationwide, but this is
   // still how everyone, tourism guides included, actually navigates
@@ -1038,6 +1052,17 @@ export default function MapView({ tripId }: Props) {
                 ⟳
               </button>
             </div>
+          )}
+
+          {mapReady && (
+            <button
+              type="button"
+              className={styles.mapTypeToggle}
+              onClick={toggleMapType}
+              title={mapType === 'roadmap' ? 'Switch to satellite view' : 'Switch to default view'}
+            >
+              {mapType === 'roadmap' ? 'satellite' : 'default'}
+            </button>
           )}
 
           {mapReady && (
