@@ -1,8 +1,31 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  useDraggable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent
+} from '@dnd-kit/core'
 import { supabase } from '../lib/supabaseClient'
 import { loadGoogleMaps } from '../lib/googleMapsLoader'
 import { CATEGORIES, ICON_VARIANTS, categoryConfig, groupPinsByCategory, pinBadgeColor, pinFilterKey, pinIconSvg, type PinCategory } from '../lib/pinCategories'
-import type { Pin, ItineraryDay, ItineraryStop } from '../types'
+import {
+  computeColumnLayout,
+  continuationBlockGeometry,
+  legBlockGeometry,
+  minutesToTime,
+  snapMinutes,
+  stopBlockGeometry,
+  timeToMinutes,
+  DEFAULT_DURATION_MIN
+} from '../lib/itineraryLayout'
+import { TimelineZone, TravelCardFull } from './ItineraryTimeline'
+import timelineStyles from './ItineraryTimeline.module.css'
+import type { Pin, ItineraryDay, ItineraryStop, TravelLeg } from '../types'
 import styles from './MapView.module.css'
 
 interface Props {
@@ -198,6 +221,21 @@ export default function MapView({ tripId }: Props) {
   const [itineraryDays, setItineraryDays] = useState<ItineraryDay[]>([])
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
   const [dayStops, setDayStops] = useState<(ItineraryStop & { pin: Pin })[]>([])
+  // Session 33: all travel legs across the trip (not just the
+  // selected day) — same reasoning as ItineraryView.tsx's
+  // allTravelLegs: editing a leg on one day can change which OTHER
+  // day it shows a continuation block on, so a single-day cache would
+  // go stale the moment a leg's to_date changes.
+  const [allTravelLegs, setAllTravelLegs] = useState<TravelLeg[]>([])
+  // Drag-and-drop (Session 33) — dragging a pin from the sidebar onto
+  // the new itinerary panel's timeline schedules it; dragging an
+  // already-scheduled stop block moves its time. Same id convention
+  // ('pool-<pinId>' / 'tstop-<stopId>') as ItineraryView.tsx's own
+  // DndContext, so the two behave identically even though each page
+  // runs its own separate DndContext instance (dnd-kit doesn't need a
+  // single global one, and the two tabs are never mounted at once).
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const timelineWrapperRef = useRef<HTMLDivElement>(null)
 
   // Category/variant dimming filter (Session 27) — a pin is dimmed on
   // the map and in the pinned list when filters are active AND its
@@ -352,6 +390,10 @@ export default function MapView({ tripId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId])
 
+  useEffect(() => {
+    loadAllTravelLegs(itineraryDays.map(d => d.id))
+  }, [itineraryDays])
+
   // Default to the first day once days have loaded, so the panel
   // isn't blank on first visit — but only ever auto-picks ONCE per
   // trip load (guarded by selectedDayId already being null), so it
@@ -387,6 +429,141 @@ export default function MapView({ tripId }: Props) {
     dayStops.forEach(stop => bounds.extend({ lat: stop.pin.lat, lng: stop.pin.lng }))
     map.fitBounds(bounds, 80)
   }, [dayStops])
+
+  // Everything below mirrors ItineraryView.tsx's own derived values and
+  // mutation functions (Session 33) — same shapes, same shared
+  // computeColumnLayout/geometry functions, so the two panels' timelines
+  // genuinely behave the same, not just look the same.
+  const selectedDay = useMemo(() => itineraryDays.find(d => d.id === selectedDayId) ?? null, [itineraryDays, selectedDayId])
+  const timedStops = useMemo(
+    () => [...dayStops].filter(s => s.start_time != null).sort((a, b) => (timeToMinutes(a.start_time) ?? 0) - (timeToMinutes(b.start_time) ?? 0)),
+    [dayStops]
+  )
+  const dayTravelLegs = useMemo(() => allTravelLegs.filter(l => l.itinerary_day_id === selectedDayId), [allTravelLegs, selectedDayId])
+  const continuationLegs = useMemo(() => {
+    if (!selectedDay?.date) return []
+    return allTravelLegs.filter(l => l.to_date === selectedDay.date && l.from_date && l.from_date !== l.to_date)
+  }, [allTravelLegs, selectedDay])
+  const timedLegs = useMemo(
+    () => [...dayTravelLegs].filter(l => l.from_time != null).sort((a, b) => (timeToMinutes(a.from_time) ?? 0) - (timeToMinutes(b.from_time) ?? 0)),
+    [dayTravelLegs]
+  )
+  const sortedTravelLegs = useMemo(
+    () =>
+      [...dayTravelLegs].sort((a, b) => {
+        const aMin = timeToMinutes(a.from_time)
+        const bMin = timeToMinutes(b.from_time)
+        if (aMin == null && bMin == null) return 0
+        if (aMin == null) return 1
+        if (bMin == null) return -1
+        return aMin - bMin
+      }),
+    [dayTravelLegs]
+  )
+  const legColumnLayout = useMemo(() => {
+    const items = [
+      ...continuationLegs.map(l => ({ id: l.id, ...continuationBlockGeometry(l) })),
+      ...timedLegs.map(l => ({ id: l.id, ...legBlockGeometry(l) }))
+    ]
+    return computeColumnLayout(items)
+  }, [continuationLegs, timedLegs])
+  const stopColumnLayout = useMemo(
+    () => computeColumnLayout(timedStops.map(s => ({ id: s.id, ...stopBlockGeometry(s) }))),
+    [timedStops]
+  )
+
+  function nextDefaultStartMinutes(): number {
+    const ends = dayStops
+      .map(s => {
+        const start = timeToMinutes(s.start_time)
+        const end = timeToMinutes(s.end_time)
+        return end ?? (start != null ? start + DEFAULT_DURATION_MIN : null)
+      })
+      .filter((m): m is number => m != null)
+    if (ends.length === 0) return 9 * 60
+    return snapMinutes(Math.min(24 * 60 - DEFAULT_DURATION_MIN, Math.max(...ends)))
+  }
+
+  async function addStopToDayAtTime(pinId: string, startMin: number) {
+    if (!selectedDayId) return
+    if (dayStops.some(s => s.pin_id === pinId)) return
+    const start = snapMinutes(startMin)
+    const end = Math.min(24 * 60 - 1, start + DEFAULT_DURATION_MIN)
+    const { error } = await supabase.from('itinerary_stops').insert({
+      itinerary_day_id: selectedDayId,
+      pin_id: pinId,
+      order_index: dayStops.length,
+      start_time: minutesToTime(start),
+      end_time: minutesToTime(end)
+    })
+    if (error) {
+      console.error('Failed to schedule pin', error)
+      return
+    }
+    loadDayStops(selectedDayId)
+  }
+
+  async function moveStopToTime(stopId: string, newStartMin: number) {
+    const stop = dayStops.find(s => s.id === stopId)
+    if (!stop) return
+    const oldStart = timeToMinutes(stop.start_time)
+    const oldEnd = timeToMinutes(stop.end_time)
+    const duration = oldStart != null && oldEnd != null ? oldEnd - oldStart : DEFAULT_DURATION_MIN
+    const newStart = snapMinutes(newStartMin)
+    const newEnd = Math.min(24 * 60 - 1, newStart + Math.max(duration, 15))
+    const { error } = await supabase
+      .from('itinerary_stops')
+      .update({ start_time: minutesToTime(newStart), end_time: minutesToTime(newEnd) })
+      .eq('id', stopId)
+    if (error) {
+      console.error('Failed to move stop', error)
+      return
+    }
+    if (selectedDayId) loadDayStops(selectedDayId)
+  }
+
+  // Converts a drag's final on-screen position into a minutes-of-day
+  // value, relative to the timeline's full scrollable track — accounts
+  // for however far the wrapper is currently scrolled. Same approach as
+  // ItineraryView.tsx's dropMinutesFromEvent.
+  function dropMinutesFromEvent(event: DragEndEvent): number | null {
+    const wrapper = timelineWrapperRef.current
+    const draggedRect = event.active.rect.current.translated
+    if (!wrapper || !draggedRect) return null
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const relativeY = draggedRect.top - wrapperRect.top + wrapper.scrollTop
+    const minutes = (relativeY / 60) * 60
+    return snapMinutes(minutes)
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragId(event.active.id as string)
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveDragId(null)
+    const { active, over } = event
+    if (!over) return
+    const activeId = active.id as string
+    const overId = over.id as string
+
+    if (activeId.startsWith('pool-') && overId === 'timeline-zone') {
+      const minutes = dropMinutesFromEvent(event)
+      addStopToDayAtTime(activeId.slice(5), minutes ?? nextDefaultStartMinutes())
+      return
+    }
+    if (activeId.startsWith('tstop-') && overId === 'timeline-zone') {
+      const minutes = dropMinutesFromEvent(event)
+      if (minutes != null) moveStopToTime(activeId.slice(6), minutes)
+    }
+  }
+
+  const dragSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 1000, tolerance: 8 } })
+  )
+  const activeDragPin = activeDragId?.startsWith('pool-') ? pins.find(p => p.id === activeDragId.slice(5)) : undefined
+  const activeDragStop = activeDragId?.startsWith('tstop-') ? dayStops.find(s => s.id === activeDragId.slice(6)) : undefined
 
   async function loadPins() {
     const { data, error } = await supabase
@@ -427,6 +604,19 @@ export default function MapView({ tripId }: Props) {
       return
     }
     setDayStops((data ?? []) as unknown as (ItineraryStop & { pin: Pin })[])
+  }
+
+  async function loadAllTravelLegs(dayIds: string[]) {
+    if (dayIds.length === 0) {
+      setAllTravelLegs([])
+      return
+    }
+    const { data, error } = await supabase.from('travel_legs').select('*').in('itinerary_day_id', dayIds)
+    if (error) {
+      console.error('Failed to load travel legs', error)
+      return
+    }
+    setAllTravelLegs(data ?? [])
   }
 
   // Saves the pin-level note (pins.notes — a note about the PLACE,
@@ -1256,6 +1446,7 @@ export default function MapView({ tripId }: Props) {
         )}
       </div>
 
+      <DndContext sensors={dragSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className={styles.wrapper}>
         <div className={styles.mapPane}>
           <div ref={mapContainer} className={styles.map} />
@@ -1452,17 +1643,13 @@ export default function MapView({ tripId }: Props) {
                           {group.label}
                         </button>
                         {group.pins.map(pin => (
-                          <button
+                          <DraggablePinnedRow
                             key={pin.id}
-                            type="button"
-                            className={styles.pinnedRow}
-                            data-active={selectedPin?.id === pin.id}
-                            data-dimmed={isDimmed(pin)}
+                            pin={pin}
+                            active={selectedPin?.id === pin.id}
+                            dimmed={isDimmed(pin)}
                             onClick={() => selectPin(pin)}
-                          >
-                            <span className={styles.pinnedDot} style={{ backgroundColor: pinBadgeColor(pin.category, pin.icon) }} />
-                            <span className={styles.pinnedName}>{pin.name}</span>
-                          </button>
+                          />
                         ))}
                       </div>
                     )
@@ -1496,17 +1683,13 @@ export default function MapView({ tripId }: Props) {
                                 {variant.label}
                               </button>
                               {byVariant.get(variant.key)!.map(pin => (
-                                <button
+                                <DraggablePinnedRow
                                   key={pin.id}
-                                  type="button"
-                                  className={styles.pinnedRow}
-                                  data-active={selectedPin?.id === pin.id}
-                                  data-dimmed={isDimmed(pin)}
+                                  pin={pin}
+                                  active={selectedPin?.id === pin.id}
+                                  dimmed={isDimmed(pin)}
                                   onClick={() => selectPin(pin)}
-                                >
-                                  <span className={styles.pinnedDot} style={{ backgroundColor: pinBadgeColor(pin.category, pin.icon) }} />
-                                  <span className={styles.pinnedName}>{pin.name}</span>
-                                </button>
+                                />
                               ))}
                             </div>
                           )
@@ -1519,11 +1702,20 @@ export default function MapView({ tripId }: Props) {
           </div>
         </aside>
 
-        {/* New right-hand panel (Session 32) — day tabs + that day's
-            stops, read-only preview of the itinerary that also drives
-            which pins are dimmed/centered on the map (see isDimmed and
-            the fitBounds effect above). Editing still only happens on
-            the separate Itinerary tab; hidden entirely on mobile (see
+        {/* New right-hand panel (Session 32, upgraded Session 33) — day
+            tabs, full-detail flight cards, and a real proportional
+            timeline (shared with the Itinerary tab via
+            ItineraryTimeline.tsx) that also drives which pins are
+            dimmed/centered on the map (see isDimmed and the fitBounds
+            effect above). Drag a pin from the pinned list onto the
+            timeline to schedule it, or drag an existing stop block to
+            change its time — same shared column-overlap layout as the
+            Itinerary tab, so e.g. three things booked for 3pm show as
+            three side-by-side blocks here too. Editing a flight's own
+            details, or a stop's exact start/end time and notes, still
+            only happens on the separate Itinerary tab for now — this
+            panel schedules and reschedules, it doesn't yet replace
+            that tab's forms. Hidden entirely on mobile (see
             .itineraryPanel's mobile rule) — no room for a third panel
             on a phone, and mobile already has that dedicated tab. */}
         <aside className={styles.itineraryPanel}>
@@ -1541,19 +1733,48 @@ export default function MapView({ tripId }: Props) {
             ))}
             {itineraryDays.length === 0 && <p className={styles.hint}>no itinerary days yet</p>}
           </div>
-          {dayStops.length === 0 && itineraryDays.length > 0 && (
-            <p className={styles.hint}>nothing scheduled this day</p>
-          )}
-          {dayStops.map(stop => (
-            <div key={stop.id} className={styles.dayStopRow}>
-              <span className={styles.dayStopTime}>{stop.start_time?.slice(0, 5) ?? ''}</span>
-              <p className={styles.dayStopName} onClick={() => selectPin(stop.pin)}>
-                {stop.pin.name}
-              </p>
+
+          {sortedTravelLegs.length > 0 && (
+            <div className={timelineStyles.travelCardList}>
+              {sortedTravelLegs.map(leg => (
+                <TravelCardFull key={leg.id} leg={leg} onEdit={() => {}} />
+              ))}
             </div>
-          ))}
+          )}
+
+          {selectedDayId && (
+            <TimelineZone
+              scrollRef={timelineWrapperRef}
+              timedStops={timedStops}
+              stopColumnLayout={stopColumnLayout}
+              timedLegs={timedLegs}
+              continuationLegs={continuationLegs}
+              legColumnLayout={legColumnLayout}
+              onStopClick={stop => selectPin(stop.pin)}
+              onLegClick={() => {}}
+              gutter={40}
+            />
+          )}
         </aside>
       </div>
+
+      <DragOverlay>
+        {activeDragPin && (
+          <div className={timelineStyles.poolChip}>
+            <span className={timelineStyles.poolChipDot} style={{ backgroundColor: pinBadgeColor(activeDragPin.category, activeDragPin.icon) }} />
+            <span>{activeDragPin.name}</span>
+          </div>
+        )}
+        {activeDragStop && (
+          <div
+            className={timelineStyles.dragPreviewBlock}
+            style={{ backgroundColor: pinBadgeColor(activeDragStop.pin.category, activeDragStop.pin.icon) }}
+          >
+            {activeDragStop.pin.name}
+          </div>
+        )}
+      </DragOverlay>
+      </DndContext>
     </div>
   )
 }
@@ -1562,6 +1783,43 @@ export default function MapView({ tripId }: Props) {
 // form — only rendered for categories with more than a plain default
 // icon (see ICON_VARIANTS). `selected` undefined/unset means "category
 // default", shown as the first ("general") option being active.
+// Session 33 — wraps the existing pinned-list row with useDraggable so
+// it can be dragged onto the new itinerary panel's timeline (id
+// 'pool-<pinId>', the same convention PoolChip uses in
+// ItineraryTimeline.tsx), without changing any of its existing click/
+// active/dimmed behavior. A small local component rather than inline
+// in the .map() callback, since hooks can't be called a variable
+// number of times within one component body.
+function DraggablePinnedRow({
+  pin,
+  active,
+  dimmed,
+  onClick
+}: {
+  pin: Pin
+  active: boolean
+  dimmed: boolean
+  onClick: () => void
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `pool-${pin.id}` })
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      className={styles.pinnedRow}
+      data-active={active}
+      data-dimmed={dimmed}
+      style={{ opacity: isDragging ? 0.4 : 1 }}
+      onClick={onClick}
+      {...listeners}
+      {...attributes}
+    >
+      <span className={styles.pinnedDot} style={{ backgroundColor: pinBadgeColor(pin.category, pin.icon) }} />
+      <span className={styles.pinnedName}>{pin.name}</span>
+    </button>
+  )
+}
+
 function IconPicker({
   category,
   selected,

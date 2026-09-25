@@ -312,32 +312,6 @@
   font-weight: 500;
 }
 
-.dayStopRow {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.dayStopTime {
-  font-size: 11px;
-  color: var(--text-muted);
-  width: 40px;
-  flex-shrink: 0;
-  padding-top: 1px;
-}
-
-.dayStopName {
-  flex: 1;
-  border-left: 2px solid var(--accent);
-  padding-left: 8px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.dayStopName:hover {
-  color: var(--accent);
-}
-
 .sidebarClose {
   display: none;
 }

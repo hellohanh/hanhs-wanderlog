@@ -1,0 +1,439 @@
+/* Shared with ItineraryView.module.css's page layout (Session 32/33) —
+   these are the visual styles for the timeline/pool/travel-card pieces
+   themselves, used by both the full Itinerary tab and the narrower
+   itinerary panel on the map page. Page-specific positioning (grid
+   areas, column widths) stays in each page's own CSS module instead;
+   see ItineraryView.module.css's .timelineWrapper for an example of a
+   page composing its own grid-area on top of this shared box look. */
+
+.travelCardList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.travelCardFull {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 40px 12px 14px;
+  background: var(--surface-2);
+}
+
+.travelCardDuration {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  border-right: 1px solid var(--border);
+  padding-right: 14px;
+}
+
+.travelCardDurationHours {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.travelCardDurationMin {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  margin-top: 2px;
+}
+
+.travelCardMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.travelCardRoute {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.travelCardMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #1B2A4A;
+  margin-bottom: 8px;
+}
+
+.travelCardTimes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.travelCardEndpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.travelCardLocation {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.75);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.travelCardDivider {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.travelCardDividerDots {
+  color: rgba(0, 0, 0, 0.75);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+.travelCardDividerPlane {
+  color: rgba(0, 0, 0, 0.75);
+  font-size: 17px;
+  line-height: 1;
+  margin: 0 3px;
+}
+
+.travelCardDividerIcon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 2px;
+}
+
+.travelCardTimeValue {
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.travelCardTz {
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.75);
+  margin-left: 2px;
+}
+
+.travelCardDayOffset {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-text-on-light);
+  background: var(--accent-tint);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+.travelCardEditButton {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.travelCardEditButton:hover {
+  background: var(--surface-1);
+  color: var(--accent);
+}
+
+.timelineWrapper {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.timelineScroll {
+  /* 1080px = 18 hours at 60px/hour — matches the 06:00-00:00 (midnight)
+     default window (see SCROLL_TO_HOUR in itineraryLayout.ts): scrolled
+     to the top of hour 6, this exactly fills the viewport through the
+     end of the day with no partial hour cut off at the bottom. */
+  max-height: 1080px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.timelineTrack {
+  position: relative;
+}
+
+.hourRow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.hourLabel {
+  width: 56px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px 0 0;
+  text-align: right;
+}
+
+.halfHourLine {
+  flex: 1;
+  border-left: 1px solid var(--border);
+  position: relative;
+}
+
+.halfHourLine::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--border);
+}
+
+.timelineBlock {
+  position: absolute;
+  left: 60px;
+  right: 8px;
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: white;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.timelineBlockHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timelineBlockNote {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.9;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.timelineBlockName {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.timelineBlockTime {
+  flex-shrink: 0;
+  font-weight: 700;
+  opacity: 0.9;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.timelineBlockContinues {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.timelineBlockContinuedFrom {
+  position: absolute;
+  left: 12px;
+  right: 40px;
+  top: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.timelineLegCard {
+  position: absolute;
+  left: 60px;
+  right: 8px;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  /* Steel gradient: 40% opacity at the very bottom, ramping down to
+     0% (fully transparent) by the point 25% down from the top of the
+     block — in "to top" gradient terms that's the 75% stop (0% =
+     bottom, 100% = top), so it reaches full transparency before the
+     top 25% of the card rather than exactly at the top edge. That top
+     quarter then stays fully transparent up to the edge. */
+  background: linear-gradient(to top, rgba(92, 122, 153, 0.4) 0%, transparent 75%), var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 4px solid transparent; /* color set inline per leg's mode */
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+/* Duration block top-aligned to match the title's top edge, specific
+   to the timeline's version of the card — the card-list version
+   (.travelCardFull) keeps its vertically-centered duration. */
+.timelineLegCard .travelCardDuration {
+  justify-content: flex-start;
+}
+
+/* Title reads a bit large at the card list's 20px once it's inside
+   the tighter timeline block. */
+.timelineLegCard .travelCardRoute {
+  font-size: 17px;
+}
+
+/* The "continued from" label is absolutely positioned (see
+   .timelineBlockContinuedFrom) rather than in normal flow, so on its
+   own it sits on top of the title instead of pushing it down — this
+   pushes the actual card content down 30px to make room for it. */
+.timelineContinuationCard {
+  padding-top: 40px;
+}
+
+.dragPreviewBlock {
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.poolSection {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--surface-1);
+  max-height: 640px;
+  overflow-y: auto;
+}
+
+.poolLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+}
+
+.poolGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.poolGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.poolGroupLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.poolList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.poolChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 6px 6px 8px;
+  background: var(--surface-2);
+  font-size: 13px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.poolChipDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.poolChip span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quickAddButton {
+  flex-shrink: 0;
+  border: none;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.quickAddButton:hover {
+  background: var(--accent-tint);
+  color: var(--accent-text-on-light);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
