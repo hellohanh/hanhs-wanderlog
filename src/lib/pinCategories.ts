@@ -58,12 +58,24 @@ export interface IconVariant {
 // get their own distinct color so the map reads at a glance.
 export const ICON_VARIANTS: Partial<Record<PinCategory, IconVariant[]>> = {
   attraction: [
-    { key: 'general', label: 'General', svg: ICON_SVGS.attraction, color: '#1B2A4A' },
+    {
+      key: 'bridge',
+      label: 'Bridge',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16c2-4 5-6 9-6s7 2 9 6"/><line x1="5" y1="16" x2="5" y2="21"/><line x1="19" y1="16" x2="19" y2="21"/><line x1="3" y1="21" x2="21" y2="21"/></svg>`,
+      color: '#5C6B73'
+    },
     {
       key: 'church',
       label: 'Church',
       svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><line x1="7" y1="9" x2="17" y2="9"/></svg>`,
       color: '#8B1E3F'
+    },
+    { key: 'general', label: 'General', svg: ICON_SVGS.attraction, color: '#1B2A4A' },
+    {
+      key: 'landmark',
+      label: 'Landmark',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6h-6l3-6z"/><path d="M9 8h6l2 6H7l2-6z"/><path d="M6 21V14h12v7"/></svg>`,
+      color: '#B5541F'
     },
     {
       key: 'museum',
@@ -72,10 +84,16 @@ export const ICON_VARIANTS: Partial<Record<PinCategory, IconVariant[]>> = {
       color: '#B8860B'
     },
     {
-      key: 'landmark',
-      label: 'Landmark',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6h-6l3-6z"/><path d="M9 8h6l2 6H7l2-6z"/><path d="M6 21V14h12v7"/></svg>`,
-      color: '#B5541F'
+      key: 'music_venue',
+      label: 'Music venue',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>`,
+      color: '#8E44AD'
+    },
+    {
+      key: 'park',
+      label: 'Park/garden',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><line x1="12" y1="14" x2="12" y2="21"/></svg>`,
+      color: '#4C8C4A'
     },
     {
       key: 'temple',
@@ -88,32 +106,18 @@ export const ICON_VARIANTS: Partial<Record<PinCategory, IconVariant[]>> = {
       label: 'Viewpoint',
       svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="6" r="2" fill="white" stroke="none"/><path d="M3 20l6-9 4 5 3-4 5 8"/></svg>`,
       color: '#2E86AB'
-    },
-    {
-      key: 'park',
-      label: 'Park/garden',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><line x1="12" y1="14" x2="12" y2="21"/></svg>`,
-      color: '#4C8C4A'
-    },
-    {
-      key: 'bridge',
-      label: 'Bridge',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16c2-4 5-6 9-6s7 2 9 6"/><line x1="5" y1="16" x2="5" y2="21"/><line x1="19" y1="16" x2="19" y2="21"/><line x1="3" y1="21" x2="21" y2="21"/></svg>`,
-      color: '#5C6B73'
-    },
-    {
-      key: 'music_venue',
-      label: 'Music venue',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>`,
-      color: '#8E44AD'
     }
   ],
   dining: [
-    { key: 'general', label: 'General', svg: ICON_SVGS.dining },
     {
-      key: 'street_food',
-      label: 'Street food',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16l-2-5H6l-2 5z"/><path d="M6 21V11h12v10"/><circle cx="9" cy="21" r="1" fill="white" stroke="none"/><circle cx="15" cy="21" r="1" fill="white" stroke="none"/></svg>`
+      key: 'banh_mi',
+      label: 'Bánh mì',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="13" rx="9" ry="4"/><path d="M5 13c2-3 12-3 14 0"/><path d="M8 11l1 2M12 10l1 3M16 11l1 2"/></svg>`
+    },
+    {
+      key: 'bar_pub',
+      label: 'Bar/pub',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h11v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6z"/><path d="M16 8h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><line x1="5" y1="6" x2="16" y2="6"/></svg>`
     },
     {
       key: 'bbq_grill',
@@ -121,9 +125,14 @@ export const ICON_VARIANTS: Partial<Record<PinCategory, IconVariant[]>> = {
       svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="8" rx="1"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="8" y1="6" x2="8" y2="10"/><line x1="16" y1="6" x2="16" y2="10"/></svg>`
     },
     {
-      key: 'seafood',
-      label: 'Seafood',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-5 12-5 16 0-4 5-12 5-16 0z"/><circle cx="16" cy="11" r="0.8" fill="white" stroke="none"/><path d="M19 12l3-3M19 12l3 3"/></svg>`
+      key: 'bun',
+      label: 'Bún/Mì',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16a8 6 0 0 1-16 0z"/><path d="M7 9l2-2M11 9l1-3M15 9l2-2"/></svg>`
+    },
+    {
+      key: 'com',
+      label: 'Cơm',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="16" rx="8" ry="3"/><path d="M8 16c0-4 8-4 8 0"/></svg>`
     },
     {
       key: 'fast_food',
@@ -135,10 +144,11 @@ export const ICON_VARIANTS: Partial<Record<PinCategory, IconVariant[]>> = {
       label: 'Fine dining',
       svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8l-1 6a3 3 0 0 1-6 0z"/><line x1="12" y1="12" x2="12" y2="19"/><line x1="8" y1="21" x2="16" y2="21"/></svg>`
     },
+    { key: 'general', label: 'General', svg: ICON_SVGS.dining },
     {
-      key: 'bar_pub',
-      label: 'Bar/pub',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h11v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6z"/><path d="M16 8h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><line x1="5" y1="6" x2="16" y2="6"/></svg>`
+      key: 'lau',
+      label: 'Lẩu',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16v3a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6v-3z"/><path d="M2 11h4M18 11h4"/><path d="M9 7c0 1-1 1-1 2M15 7c0 1-1 1-1 2"/></svg>`
     },
     {
       key: 'pho',
@@ -146,24 +156,14 @@ export const ICON_VARIANTS: Partial<Record<PinCategory, IconVariant[]>> = {
       svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16a8 6 0 0 1-16 0z"/><path d="M9 6c0 1-1 1-1 2"/><path d="M13 6c0 1-1 1-1 2"/></svg>`
     },
     {
-      key: 'bun',
-      label: 'Bún/Mì',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16a8 6 0 0 1-16 0z"/><path d="M7 9l2-2M11 9l1-3M15 9l2-2"/></svg>`
+      key: 'seafood',
+      label: 'Seafood',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-5 12-5 16 0-4 5-12 5-16 0z"/><circle cx="16" cy="11" r="0.8" fill="white" stroke="none"/><path d="M19 12l3-3M19 12l3 3"/></svg>`
     },
     {
-      key: 'banh_mi',
-      label: 'Bánh mì',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="13" rx="9" ry="4"/><path d="M5 13c2-3 12-3 14 0"/><path d="M8 11l1 2M12 10l1 3M16 11l1 2"/></svg>`
-    },
-    {
-      key: 'com',
-      label: 'Cơm',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="16" rx="8" ry="3"/><path d="M8 16c0-4 8-4 8 0"/></svg>`
-    },
-    {
-      key: 'lau',
-      label: 'Lẩu',
-      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16v3a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6v-3z"/><path d="M2 11h4M18 11h4"/><path d="M9 7c0 1-1 1-1 2M15 7c0 1-1 1-1 2"/></svg>`
+      key: 'street_food',
+      label: 'Street food',
+      svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16l-2-5H6l-2 5z"/><path d="M6 21V11h12v10"/><circle cx="9" cy="21" r="1" fill="white" stroke="none"/><circle cx="15" cy="21" r="1" fill="white" stroke="none"/></svg>`
     }
   ]
 }
