@@ -102,17 +102,16 @@
    further down). */
 @media (min-width: 769px) {
   .wrapper {
-    /* Session 37: vh -> dvh. The user confirmed the inner timeline
-       scroll genuinely does reach the bottom at 150% zoom (the
-       scrollbar sits at its true end) — the box's own rendered height
-       is simply shorter than what its content needs, clipping the
-       bottom visually even though the scroll position is correct.
-       That's a signature symptom of vh's known inconsistency with
-       non-100% browser zoom (a long-documented cross-browser quirk,
-       not specific to this page). dvh (dynamic viewport height) is
-       the modern, zoom-accurate replacement — same "100% of the
-       visible viewport" intent, without vh's zoom-rounding quirks. */
-    height: calc(100dvh - 220px);
+    /* Session 38: no more height rule here at all — after THREE
+       CSS-only attempts (E87/E88/E89) failed to actually fix clipping
+       at 150% zoom, gave up on CSS viewport units entirely and moved
+       to a JS-measured height (window.innerHeight, MapView.tsx),
+       applied as an inline style on this element. CSS viewport units
+       (vh, and apparently dvh too) have proven unreliable in this
+       exact scenario; window.innerHeight is the well-established
+       reliable way to get the TRUE zoomed viewport size. min-height
+       stays here purely as a fallback for the brief instant before
+       the JS effect runs on first mount. */
     min-height: 360px;
   }
 
@@ -298,27 +297,21 @@
   border-left: 1px solid var(--border);
   padding: 12px;
   background: var(--surface-1);
-  display: flex;
-  flex-direction: column;
-  /* min-height: 0 — this panel is itself a flex ROW item inside
-     .wrapper (Session 36). Without it, a flex item won't shrink below
-     its own content's natural height even when the row is shorter —
-     the same gotcha .timelineWrapper already works around one level
-     down (its own min-height: 0, see ItineraryTimeline.module.css).
-     Both levels need it; fixing only the inner one still left the
-     outer .itineraryPanel refusing to shrink to .wrapper's actual
-     height at high browser zoom, which is what kept clipping content
-     with no way to reach it even after E87. No overflow-y here on
-     purpose — this panel used to scroll as a whole, nested inside a
-     SECOND scrollable box (the shared TimelineZone's own
-     .timelineScroll), which mismatched badly at higher browser zoom
-     levels (a smaller effective viewport meant the inner box's fixed
-     max-height no longer fit, clipping content with no obvious way to
-     reach it). Now this panel is purely a flex column — the day
-     tabs/toggle/flight cards keep their natural size, and only the
-     timeline itself (flex: 1 via the shared .timelineWrapper) scrolls,
-     clipped correctly to whatever space is actually left. */
-  min-height: 0;
+  overflow-y: auto;
+  /* Session 39 — after FOUR attempts at a nested flex/scroll approach
+     (E87-E90) all failed to actually fix clipping at high browser
+     zoom, abandoned that whole structure and mirrored .sidebar's own
+     approach instead, which has never had this problem: no flex
+     column, no separate scroll region for just the timeline — this
+     panel is now a single plain block with overflow-y: auto, exactly
+     like .sidebar, and everything inside it (day tabs, toggle, flight
+     cards, AND the timeline) scrolls together as one unit rather than
+     day tabs staying pinned at top. Simpler, and it's the SAME pattern
+     already proven to work correctly at every zoom level for the pins
+     list — not a new pattern that could have its own undiscovered
+     edge case. The shared TimelineZone's own internal .timelineScroll
+     (max-height: 1080px) still caps how tall the timeline portion
+     alone can render, so this doesn't produce an unbounded page. */
 }
 
 .itineraryPanelHeader {

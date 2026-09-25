@@ -228,6 +228,26 @@ export default function MapView({ tripId }: Props) {
   // stays fully independent either way, so toggling this on doesn't
   // change what clicking a category label on the left does.
   const [showAllPins, setShowAllPins] = useState(false)
+  // Session 38 — after THREE CSS-only attempts at the same high-zoom
+  // clipping bug (E87 min-height floor, E88 flex min-height:0, E89
+  // vh->dvh) all failed to actually fix it for the user, stopped
+  // trusting CSS viewport units at non-100% browser zoom entirely and
+  // measured the real thing in JS instead. window.innerHeight is
+  // well-established to correctly reflect the TRUE zoomed viewport
+  // size across browsers — this is the specific case where vh/dvh
+  // have historically been unreliable, which is presumably why E89
+  // didn't hold either. Recomputed on resize, which fires on browser
+  // zoom changes too (not just window resizing).
+  const [wrapperHeight, setWrapperHeight] = useState(() => Math.max(360, window.innerHeight - 220))
+  useEffect(() => {
+    function updateHeight() {
+      setWrapperHeight(Math.max(360, window.innerHeight - 220))
+    }
+    window.addEventListener('resize', updateHeight)
+    updateHeight()
+    return () => window.removeEventListener('resize', updateHeight)
+  }, [])
+
   const [dayStops, setDayStops] = useState<(ItineraryStop & { pin: Pin })[]>([])
   // Session 33: all travel legs across the trip (not just the
   // selected day) — same reasoning as ItineraryView.tsx's
@@ -1463,7 +1483,7 @@ export default function MapView({ tripId }: Props) {
       </div>
 
       <DndContext sensors={dragSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className={styles.wrapper}>
+      <div className={styles.wrapper} style={window.innerWidth >= 769 ? { height: wrapperHeight } : undefined}>
         <div className={styles.mapPane}>
           <div ref={mapContainer} className={styles.map} />
           {mapReady && (
