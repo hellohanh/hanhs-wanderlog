@@ -25,7 +25,7 @@ import {
   HOUR_PX,
   SCROLL_TO_HOUR
 } from '../lib/itineraryLayout'
-import { TimelineZone, TravelCardFull } from './ItineraryTimeline'
+import { TimelineZone } from './ItineraryTimeline'
 import timelineStyles from './ItineraryTimeline.module.css'
 import type { Pin, ItineraryDay, ItineraryStop, TravelLeg } from '../types'
 import styles from './MapView.module.css'
@@ -482,18 +482,6 @@ export default function MapView({ tripId }: Props) {
   }, [allTravelLegs, selectedDay])
   const timedLegs = useMemo(
     () => [...dayTravelLegs].filter(l => l.from_time != null).sort((a, b) => (timeToMinutes(a.from_time) ?? 0) - (timeToMinutes(b.from_time) ?? 0)),
-    [dayTravelLegs]
-  )
-  const sortedTravelLegs = useMemo(
-    () =>
-      [...dayTravelLegs].sort((a, b) => {
-        const aMin = timeToMinutes(a.from_time)
-        const bMin = timeToMinutes(b.from_time)
-        if (aMin == null && bMin == null) return 0
-        if (aMin == null) return 1
-        if (bMin == null) return -1
-        return aMin - bMin
-      }),
     [dayTravelLegs]
   )
   const legColumnLayout = useMemo(() => {
@@ -1774,14 +1762,6 @@ export default function MapView({ tripId }: Props) {
             <input type="checkbox" checked={showAllPins} onChange={e => setShowAllPins(e.target.checked)} />
             show all pins
           </label>
-
-          {sortedTravelLegs.length > 0 && (
-            <div className={timelineStyles.travelCardList}>
-              {sortedTravelLegs.map(leg => (
-                <TravelCardFull key={leg.id} leg={leg} onEdit={() => {}} />
-              ))}
-            </div>
-          )}
 
           {selectedDayId && (
             <TimelineZone
