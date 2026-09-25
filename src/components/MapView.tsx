@@ -21,7 +21,9 @@ import {
   snapMinutes,
   stopBlockGeometry,
   timeToMinutes,
-  DEFAULT_DURATION_MIN
+  DEFAULT_DURATION_MIN,
+  HOUR_PX,
+  SCROLL_TO_HOUR
 } from '../lib/itineraryLayout'
 import { TimelineZone, TravelCardFull } from './ItineraryTimeline'
 import timelineStyles from './ItineraryTimeline.module.css'
@@ -220,6 +222,12 @@ export default function MapView({ tripId }: Props) {
   // tab.
   const [itineraryDays, setItineraryDays] = useState<ItineraryDay[]>([])
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
+  // "show all pins" toggle (Session 34) — off by default, matching the
+  // existing day-dimming behavior. When on, it bypasses ONLY the day
+  // filter in isDimmed() below — the category/variant filter (E75)
+  // stays fully independent either way, so toggling this on doesn't
+  // change what clicking a category label on the left does.
+  const [showAllPins, setShowAllPins] = useState(false)
   const [dayStops, setDayStops] = useState<(ItineraryStop & { pin: Pin })[]>([])
   // Session 33: all travel legs across the trip (not just the
   // selected day) — same reasoning as ItineraryView.tsx's
@@ -256,10 +264,12 @@ export default function MapView({ tripId }: Props) {
   // A pin dims if it fails EITHER active filter — the category/variant
   // filter (E75) or the day-selector filter (Session 32) — so picking
   // a day and a category filter at the same time narrows by both,
-  // rather than one silently overriding the other.
+  // rather than one silently overriding the other. showAllPins
+  // (Session 34) bypasses ONLY the day filter half of this, on purpose
+  // — the category filter's own behavior is untouched either way.
   function isDimmed(pin: Pin) {
     const failsCategoryFilter = selectedFilters.size > 0 && !selectedFilters.has(pinFilterKey(pin))
-    const failsDayFilter = selectedDayId !== null && !dayStops.some(s => s.pin_id === pin.id)
+    const failsDayFilter = !showAllPins && selectedDayId !== null && !dayStops.some(s => s.pin_id === pin.id)
     return failsCategoryFilter || failsDayFilter
   }
 
@@ -410,6 +420,12 @@ export default function MapView({ tripId }: Props) {
       return
     }
     loadDayStops(selectedDayId)
+    // Reset scroll to the 6am default whenever the selected day
+    // changes — same behavior as ItineraryView.tsx's own timeline,
+    // just not ported over when this panel was first built.
+    requestAnimationFrame(() => {
+      timelineWrapperRef.current?.scrollTo({ top: SCROLL_TO_HOUR * HOUR_PX })
+    })
   }, [selectedDayId])
 
   // Re-centers/zooms the map to fit whichever pins are scheduled on
@@ -931,7 +947,7 @@ export default function MapView({ tripId }: Props) {
       map.panTo({ lat: first.lat, lng: first.lng })
       map.setZoom(12)
     }
-  }, [pins, mapReady, selectedFilters, selectedDayId, dayStops])
+  }, [pins, mapReady, selectedFilters, selectedDayId, dayStops, showAllPins])
 
   useEffect(() => {
     if (!selectedPin) {
@@ -1733,6 +1749,11 @@ export default function MapView({ tripId }: Props) {
             ))}
             {itineraryDays.length === 0 && <p className={styles.hint}>no itinerary days yet</p>}
           </div>
+
+          <label className={styles.showAllPinsToggle}>
+            <input type="checkbox" checked={showAllPins} onChange={e => setShowAllPins(e.target.checked)} />
+            show all pins
+          </label>
 
           {sortedTravelLegs.length > 0 && (
             <div className={timelineStyles.travelCardList}>

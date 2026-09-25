@@ -312,6 +312,16 @@
   font-weight: 500;
 }
 
+.showAllPinsToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 8px 0 10px;
+  cursor: pointer;
+}
+
 .sidebarClose {
   display: none;
 }
