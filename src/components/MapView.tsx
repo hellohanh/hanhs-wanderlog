@@ -1794,6 +1794,7 @@ export default function MapView({ tripId }: Props) {
               onStopClick={stop => selectPin(stop.pin)}
               onLegClick={() => {}}
               gutter={40}
+              uncapped
             />
           )}
         </aside>

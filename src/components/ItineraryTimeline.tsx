@@ -379,8 +379,9 @@ export function TimelineZone({
   onLegClick,
   scrollRef,
   gutter,
-  className
-}: TimelineZoneProps & { scrollRef: React.RefObject<HTMLDivElement>; className?: string }) {
+  className,
+  uncapped
+}: TimelineZoneProps & { scrollRef: React.RefObject<HTMLDivElement>; className?: string; uncapped?: boolean }) {
   const { setNodeRef } = useDroppable({ id: 'timeline-zone' })
 
   function combinedRef(node: HTMLDivElement | null) {
@@ -390,9 +391,19 @@ export function TimelineZone({
 
   const hours = Array.from({ length: 24 }, (_, i) => i)
 
+  // `uncapped` (Session 40) drops .timelineScroll's own max-height/
+  // overflow-y — needed wherever an OUTER ancestor is already the
+  // single scrollable region for the whole panel (the map page, since
+  // Session 39's .itineraryPanel fix). Without this, this inner box
+  // still independently caps at 1080px and scrolls the remaining
+  // hours itself, stacking a SECOND scrollbar on top of the outer
+  // one — confusing, and not what "one scroll region" was meant to
+  // achieve. The Itinerary tab doesn't pass this — its own page
+  // doesn't scroll, so this box being the one thing that scrolls is
+  // exactly the intended design there.
   return (
     <div className={className ? `${styles.timelineWrapper} ${className}` : styles.timelineWrapper}>
-      <div ref={combinedRef} className={styles.timelineScroll}>
+      <div ref={combinedRef} className={uncapped ? styles.timelineScrollUncapped : styles.timelineScroll}>
         <div className={styles.timelineTrack} style={{ height: 24 * HOUR_PX }}>
           {hours.map(h => (
             <div key={h} className={styles.hourRow} style={{ top: h * HOUR_PX, height: HOUR_PX }}>
@@ -410,6 +421,7 @@ export function TimelineZone({
               gutter={gutter}
             />
           ))}
+
           {continuationLegs.map(leg => (
             <TimelineContinuationBlock
               key={`cont-${leg.id}`}

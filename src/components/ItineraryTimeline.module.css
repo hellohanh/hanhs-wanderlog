@@ -172,15 +172,44 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+  /* Only takes effect inside a flex column with a real height (the
+     map page's .itineraryPanel) — a CSS grid parent (the Itinerary
+     tab's .dayContent) ignores flex-specific sizing, so this is a
+     no-op there. min-height: 0 is the standard fix for a flex child
+     that would otherwise refuse to shrink below its content size. */
+  flex: 1;
+  min-height: 0;
 }
 
 .timelineScroll {
   /* 1080px = 18 hours at 60px/hour — matches the 06:00-00:00 (midnight)
      default window (see SCROLL_TO_HOUR in itineraryLayout.ts): scrolled
      to the top of hour 6, this exactly fills the viewport through the
-     end of the day with no partial hour cut off at the bottom. */
+     end of the day with no partial hour cut off at the bottom. height:
+     100% is what actually makes that cap apply correctly inside a
+     height-constrained flex parent (the map panel) — without it, this
+     box would just grow toward 1080px regardless of how much room its
+     parent actually has, which is what was clipping the panel at
+     higher browser zoom levels (a smaller effective viewport made the
+     mismatch between "wants 1080px" and "parent has less than that"
+     worse). Where there's no such parent (the Itinerary tab's page,
+     which just scrolls normally), height: 100% resolves against an
+     indeterminate parent and is ignored, so max-height alone still
+     governs there exactly as before. */
   max-height: 1080px;
+  height: 100%;
   overflow-y: auto;
+  position: relative;
+}
+
+/* Session 40 — the uncapped counterpart, used wherever an OUTER
+   ancestor is already the single scrollable region for the whole
+   panel (see TimelineZone's `uncapped` prop). No max-height, no
+   overflow-y of its own: the full 24-hour track just renders at its
+   natural full height, and whatever scrolls it is entirely the
+   ancestor's job. Without this, .timelineScroll's own cap+scroll
+   stacks a second, independent scrollbar on top of the outer one. */
+.timelineScrollUncapped {
   position: relative;
 }
 
