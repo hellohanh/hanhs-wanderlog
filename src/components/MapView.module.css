@@ -96,6 +96,27 @@
     height: calc(100vh - 220px);
     min-height: 500px;
   }
+
+  /* Session 32: moves .sidebar to visually appear FIRST (left side)
+     in the flex row, without moving its actual JSX/DOM position at
+     all — it's still coded after .mapPane, exactly where it always
+     was, right next to its mobile bottom-sheet markup. .mapPane and
+     .itineraryPanel both stay at the default order (0), so between
+     them DOM order still decides — mapPane first, itineraryPanel
+     after — landing on the requested left-to-right layout: sidebar,
+     map, itinerary. Desktop only: on mobile the sidebar becomes a
+     fixed-position bottom sheet where flex order is irrelevant, and
+     .itineraryPanel is hidden entirely (see its own rule below) —
+     mobile still has its own dedicated Itinerary tab for this.
+     Widths are the user's own explicit numbers, not estimates. */
+  .sidebar {
+    order: -1;
+    width: 250px;
+  }
+
+  .itineraryPanel {
+    width: 300px;
+  }
 }
 
 .mapPane {
@@ -245,6 +266,76 @@
   overflow-y: auto;
   background: var(--surface-1);
   position: relative;
+}
+
+/* New right-hand panel (Session 32) — day tabs at top, that day's
+   stops below. Mirrors .sidebar's own look (border, padding,
+   background) for visual consistency, but border-left instead of
+   border-right since it's the map's RIGHT neighbor, not left.
+   Desktop only — width set in the @media (min-width: 769px) block
+   above; base rule here just covers non-width visual properties so
+   there's something sane even before that breakpoint applies. */
+.itineraryPanel {
+  border-left: 1px solid var(--border);
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+}
+
+.dayTabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.dayTab {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.dayTab[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent-text-on-light);
+  font-weight: 500;
+}
+
+.dayStopRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dayStopTime {
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 40px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.dayStopName {
+  flex: 1;
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dayStopName:hover {
+  color: var(--accent);
 }
 
 .sidebarClose {
@@ -571,6 +662,15 @@ button.pinnedGroupLabel[data-filter-active='true'],
 
   .sidebar[data-open='true'] {
     transform: translateY(0);
+  }
+
+  /* Session 32: mobile keeps its own dedicated Itinerary tab for this
+     — no room for a third 300px panel on a phone screen, and the
+     mobile bottom-sheet system (peek/full drag) is already its own
+     whole subsystem that a third panel would need its own design
+     pass to fit into, not something to improvise here. */
+  .itineraryPanel {
+    display: none;
   }
 
   .sidebarClose {

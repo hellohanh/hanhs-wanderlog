@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { loadGoogleMaps } from '../lib/googleMapsLoader'
 import { CATEGORIES, ICON_VARIANTS, categoryConfig, groupPinsByCategory, pinBadgeColor, pinFilterKey, pinIconSvg, type PinCategory } from '../lib/pinCategories'
-import type { Pin } from '../types'
+import type { Pin, ItineraryDay, ItineraryStop } from '../types'
 import styles from './MapView.module.css'
 
 interface Props {
@@ -189,6 +189,16 @@ export default function MapView({ tripId }: Props) {
   const hasCenteredOnLoadRef = useRef(false)
   const [mapReady, setMapReady] = useState(false)
   const [pins, setPins] = useState<Pin[]>([])
+  // Itinerary day-selector panel (Session 32) — separate from the
+  // Itinerary tab's own day/stop state in ItineraryView.tsx; this is a
+  // lighter, map-focused read of the same data (day tabs + a simple
+  // per-day stop list), used to filter/center the map, not to edit
+  // the itinerary itself. Editing still only happens on the Itinerary
+  // tab.
+  const [itineraryDays, setItineraryDays] = useState<ItineraryDay[]>([])
+  const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
+  const [dayStops, setDayStops] = useState<(ItineraryStop & { pin: Pin })[]>([])
+
   // Category/variant dimming filter (Session 27) — a pin is dimmed on
   // the map and in the pinned list when filters are active AND its
   // own filter key (see pinFilterKey) isn't one of the selected ones.
@@ -205,8 +215,14 @@ export default function MapView({ tripId }: Props) {
     })
   }
 
+  // A pin dims if it fails EITHER active filter — the category/variant
+  // filter (E75) or the day-selector filter (Session 32) — so picking
+  // a day and a category filter at the same time narrows by both,
+  // rather than one silently overriding the other.
   function isDimmed(pin: Pin) {
-    return selectedFilters.size > 0 && !selectedFilters.has(pinFilterKey(pin))
+    const failsCategoryFilter = selectedFilters.size > 0 && !selectedFilters.has(pinFilterKey(pin))
+    const failsDayFilter = selectedDayId !== null && !dayStops.some(s => s.pin_id === pin.id)
+    return failsCategoryFilter || failsDayFilter
   }
 
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null)
@@ -330,6 +346,48 @@ export default function MapView({ tripId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId])
 
+  useEffect(() => {
+    loadItineraryDays()
+    setSelectedDayId(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId])
+
+  // Default to the first day once days have loaded, so the panel
+  // isn't blank on first visit — but only ever auto-picks ONCE per
+  // trip load (guarded by selectedDayId already being null), so it
+  // doesn't fight the user's own selection on every re-render.
+  useEffect(() => {
+    if (!selectedDayId && itineraryDays.length > 0) {
+      setSelectedDayId(itineraryDays[0].id)
+    }
+  }, [itineraryDays, selectedDayId])
+
+  useEffect(() => {
+    if (!selectedDayId) {
+      setDayStops([])
+      return
+    }
+    loadDayStops(selectedDayId)
+  }, [selectedDayId])
+
+  // Re-centers/zooms the map to fit whichever pins are scheduled on
+  // the selected day (Session 32) — a single stop gets a direct pan +
+  // fixed zoom (fitBounds degenerates oddly on a single point), more
+  // than one fits the actual bounds with generous padding so nearby
+  // markers aren't clipped at the map's edge.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || dayStops.length === 0) return
+    if (dayStops.length === 1) {
+      map.panTo({ lat: dayStops[0].pin.lat, lng: dayStops[0].pin.lng })
+      map.setZoom(14)
+      return
+    }
+    const bounds = new google.maps.LatLngBounds()
+    dayStops.forEach(stop => bounds.extend({ lat: stop.pin.lat, lng: stop.pin.lng }))
+    map.fitBounds(bounds, 80)
+  }, [dayStops])
+
   async function loadPins() {
     const { data, error } = await supabase
       .from('pins')
@@ -341,6 +399,34 @@ export default function MapView({ tripId }: Props) {
       return
     }
     setPins(data ?? [])
+  }
+
+  async function loadItineraryDays() {
+    const { data, error } = await supabase
+      .from('itinerary_days')
+      .select('*')
+      .eq('trip_id', tripId)
+      .order('day_number')
+
+    if (error) {
+      console.error('Failed to load itinerary days', error)
+      return
+    }
+    setItineraryDays(data ?? [])
+  }
+
+  async function loadDayStops(dayId: string) {
+    const { data, error } = await supabase
+      .from('itinerary_stops')
+      .select('*, pin:pins(*)')
+      .eq('itinerary_day_id', dayId)
+      .order('order_index')
+
+    if (error) {
+      console.error('Failed to load day stops', error)
+      return
+    }
+    setDayStops((data ?? []) as unknown as (ItineraryStop & { pin: Pin })[])
   }
 
   // Saves the pin-level note (pins.notes — a note about the PLACE,
@@ -655,7 +741,7 @@ export default function MapView({ tripId }: Props) {
       map.panTo({ lat: first.lat, lng: first.lng })
       map.setZoom(12)
     }
-  }, [pins, mapReady, selectedFilters])
+  }, [pins, mapReady, selectedFilters, selectedDayId, dayStops])
 
   useEffect(() => {
     if (!selectedPin) {
@@ -1431,6 +1517,41 @@ export default function MapView({ tripId }: Props) {
               </div>
             )}
           </div>
+        </aside>
+
+        {/* New right-hand panel (Session 32) — day tabs + that day's
+            stops, read-only preview of the itinerary that also drives
+            which pins are dimmed/centered on the map (see isDimmed and
+            the fitBounds effect above). Editing still only happens on
+            the separate Itinerary tab; hidden entirely on mobile (see
+            .itineraryPanel's mobile rule) — no room for a third panel
+            on a phone, and mobile already has that dedicated tab. */}
+        <aside className={styles.itineraryPanel}>
+          <div className={styles.dayTabs}>
+            {itineraryDays.map(day => (
+              <button
+                key={day.id}
+                type="button"
+                className={styles.dayTab}
+                data-active={selectedDayId === day.id}
+                onClick={() => setSelectedDayId(day.id)}
+              >
+                day {day.day_number}
+              </button>
+            ))}
+            {itineraryDays.length === 0 && <p className={styles.hint}>no itinerary days yet</p>}
+          </div>
+          {dayStops.length === 0 && itineraryDays.length > 0 && (
+            <p className={styles.hint}>nothing scheduled this day</p>
+          )}
+          {dayStops.map(stop => (
+            <div key={stop.id} className={styles.dayStopRow}>
+              <span className={styles.dayStopTime}>{stop.start_time?.slice(0, 5) ?? ''}</span>
+              <p className={styles.dayStopName} onClick={() => selectPin(stop.pin)}>
+                {stop.pin.name}
+              </p>
+            </div>
+          ))}
         </aside>
       </div>
     </div>
