@@ -31,14 +31,6 @@ interface PlaceDetails {
   website?: string
 }
 
-// Hand-built trash icon for the pin-delete button in the sidebar —
-// same inline-SVG, no-external-dependency approach as the category
-// icons in lib/pinCategories.
-const TRASH_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`
-
-// Same approach — pencil icon for the pin-rename button.
-const EDIT_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`
-
 // Custom map-pin overlay: attaches a plain HTML element (the same
 // nested white-teardrop / colored-circle / icon structure used before)
 // to the map at a lat/lng, via Google's OverlayView API. This is what
@@ -237,6 +229,14 @@ export default function MapView({ tripId }: Props) {
   // onto the same save.
   const [popupEditingPinId, setPopupEditingPinId] = useState<string | null>(null)
   const [popupEditIcon, setPopupEditIcon] = useState<string | undefined>(undefined)
+  // Session 30: lets the popup's edit form change a pin's top-level
+  // CATEGORY too (e.g. mistakenly pinned as Attraction, actually
+  // Dining), not just its icon variant within the same category —
+  // the sidebar never had this, only rename + variant. Switching
+  // category resets popupEditIcon to undefined ('general'), since an
+  // old variant key from the previous category isn't valid for the
+  // new one.
+  const [popupEditCategory, setPopupEditCategory] = useState<PinCategory | undefined>(undefined)
   const [savingPopupEdit, setSavingPopupEdit] = useState(false)
   const [draftPin, setDraftPin] = useState<DraftPin | null>(null)
   const [nearbyEats, setNearbyEats] = useState<{ name: string; lat: number; lng: number }[]>([])
@@ -245,9 +245,6 @@ export default function MapView({ tripId }: Props) {
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deletingPin, setDeletingPin] = useState(false)
-  const [editingName, setEditingName] = useState(false)
-  const [editNameValue, setEditNameValue] = useState('')
-  const [editIconValue, setEditIconValue] = useState<string | undefined>(undefined)
   const [hoveredPin, setHoveredPin] = useState<Pin | null>(null)
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null)
   const [hoverDetails, setHoverDetails] = useState<PlaceDetails | null>(null)
@@ -256,7 +253,6 @@ export default function MapView({ tripId }: Props) {
   const hoverOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverRequestId = useRef(0)
-  const [savingName, setSavingName] = useState(false)
   const [showDistricts, setShowDistricts] = useState(false)
   const districtsLayerRef = useRef<google.maps.Data | null>(null)
   const districtLabelsRef = useRef<google.maps.OverlayView[]>([])
@@ -365,27 +361,33 @@ export default function MapView({ tripId }: Props) {
   }
 
   function startPopupEditName(pin: Pin) {
+    setConfirmingDelete(false)
     setPopupEditIcon(pin.icon ?? undefined)
+    setPopupEditCategory(pin.category)
     setPopupEditingPinId(pin.id)
   }
 
-  // Same update as the sidebar's saveEditName (pins.name + pins.icon),
-  // just triggered from the popup's own separate state — see the
-  // comment by popupEditingPinId above for why they're not shared.
+  // Same underlying update as the old sidebar rename form (pins.name +
+  // pins.icon), now also pins.category — the sidebar version never
+  // supported changing category, only the popup does (E81/Session 30).
   async function savePopupEditName(pinId: string, name: string) {
     const trimmed = name.trim()
-    if (!trimmed) return
+    if (!trimmed || !popupEditCategory) return
     setSavingPopupEdit(true)
     const { error } = await supabase
       .from('pins')
-      .update({ name: trimmed, icon: popupEditIcon ?? null })
+      .update({ name: trimmed, icon: popupEditIcon ?? null, category: popupEditCategory })
       .eq('id', pinId)
     setSavingPopupEdit(false)
     if (error) {
       console.error('Failed to rename pin', error)
       return
     }
-    setSelectedPin(prev => (prev && prev.id === pinId ? { ...prev, name: trimmed, icon: popupEditIcon ?? null } : prev))
+    setSelectedPin(prev =>
+      prev && prev.id === pinId
+        ? { ...prev, name: trimmed, icon: popupEditIcon ?? null, category: popupEditCategory! }
+        : prev
+    )
     setPopupEditingPinId(null)
     loadPins()
   }
@@ -654,7 +656,6 @@ export default function MapView({ tripId }: Props) {
 
   useEffect(() => {
     setConfirmingDelete(false)
-    setEditingName(false)
   }, [selectedPin])
 
   useEffect(() => {
@@ -738,15 +739,21 @@ export default function MapView({ tripId }: Props) {
              <button id="wanderlog-note-edit" type="button" style="font-size:12px;color:#1a73e8;background:none;border:none;cursor:pointer;padding:0;">+ add note</button>
            </div>`
 
-    // Name + icon-variant editing directly in the popup (Session 29) —
-    // same underlying update as the sidebar's rename/icon-picker
-    // (pins.name + pins.icon), built the same raw-DOM way as the note
-    // editor above, with its own independent state (see
-    // popupEditingPinId's declaration for why it's not shared with
-    // the sidebar's editingName).
+    // Name + icon-variant + category editing directly in the popup
+    // (Session 29, extended in Session 30 to include category) — same
+    // underlying update as the old sidebar rename form (pins.name +
+    // pins.icon), now also pins.category, which the sidebar version
+    // never supported changing. Built in raw HTML/DOM since the popup
+    // isn't a React component; independent state from anything else
+    // (see popupEditingPinId's declaration).
     const isEditingPopupName = popupEditingPinId === selectedPin.id
-    const variants = ICON_VARIANTS[selectedPin.category]
-    const cfg = categoryConfig(selectedPin.category)
+    // While editing, the icon-variant list tracks whichever category
+    // is CURRENTLY selected in the form (popupEditCategory), not
+    // necessarily the pin's original category — switching category
+    // needs the variant swatches to refresh to match it.
+    const activeCategory = (isEditingPopupName ? popupEditCategory : undefined) ?? selectedPin.category
+    const variants = ICON_VARIANTS[activeCategory]
+    const cfg = categoryConfig(activeCategory)
     const iconPickerHtml =
       isEditingPopupName && variants
         ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;">
@@ -759,19 +766,56 @@ export default function MapView({ tripId }: Props) {
                .join('')}
            </div>`
         : ''
+    // All 8 top-level categories, in case the pin was pinned under
+    // the wrong one entirely (e.g. Attraction instead of Dining) —
+    // mirrors the same category-pill pattern the draft-pin form
+    // already uses when CREATING a pin (styles.categoryPicker /
+    // .categoryPill), just rebuilt in raw HTML for this popup.
+    const categoryPickerHtml = isEditingPopupName
+      ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0;">
+           ${CATEGORIES.map(cat => {
+             const active = activeCategory === cat.key
+             return `<button type="button" class="wanderlog-popup-category" data-key="${cat.key}" style="font-size:11px;padding:3px 8px;border-radius:12px;cursor:pointer;border:1px solid ${active ? cat.color : '#dadce0'};color:${active ? cat.color : '#5f6368'};background:${active ? `${cat.color}1a` : '#fff'};font-weight:${active ? '600' : '400'};">${esc(cat.label)}</button>`
+           }).join('')}
+         </div>`
+      : ''
     const nameHtml = isEditingPopupName
       ? `<div>
            <input id="wanderlog-name-input" type="text" value="${esc(selectedPin.name)}" style="width:100%;font-size:15px;font-weight:600;padding:4px 6px;border:1px solid #dadce0;border-radius:4px;box-sizing:border-box;font-family:inherit;" />
+           ${categoryPickerHtml}
            ${iconPickerHtml}
            <div style="display:flex;gap:8px;margin-top:4px;">
              <button id="wanderlog-name-save" type="button" style="font-size:13px;padding:4px 10px;background:#1a73e8;color:#fff;border:none;border-radius:4px;cursor:pointer;" ${savingPopupEdit ? 'disabled' : ''}>${savingPopupEdit ? 'saving…' : 'save'}</button>
              <button id="wanderlog-name-cancel" type="button" style="font-size:13px;padding:4px 10px;background:none;border:1px solid #dadce0;border-radius:4px;cursor:pointer;" ${savingPopupEdit ? 'disabled' : ''}>cancel</button>
            </div>
          </div>`
-      : `<div style="display:flex;align-items:center;gap:6px;">
-           <p style="margin:0;font-size:15px;font-weight:600;">${esc(selectedPin.name)}</p>
-           <button id="wanderlog-name-edit" type="button" aria-label="edit name" title="edit name" style="background:none;border:none;cursor:pointer;padding:2px;color:#5f6368;font-size:13px;line-height:1;">✎</button>
-         </div>`
+      : confirmingDelete
+        ? `<div style="display:flex;align-items:center;gap:8px;">
+             <p style="margin:0;font-size:13px;">delete this pin?</p>
+             <button id="wanderlog-delete-yes" type="button" style="font-size:13px;padding:3px 8px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;" ${deletingPin ? 'disabled' : ''}>${deletingPin ? '…' : 'yes'}</button>
+             <button id="wanderlog-delete-no" type="button" style="font-size:13px;padding:3px 8px;background:none;border:1px solid #dadce0;border-radius:4px;cursor:pointer;" ${deletingPin ? 'disabled' : ''}>no</button>
+           </div>`
+        : `<div style="display:flex;align-items:center;gap:6px;">
+             <p style="margin:0;font-size:15px;font-weight:600;">${esc(selectedPin.name)}</p>
+             <button id="wanderlog-name-edit" type="button" aria-label="edit name" title="edit name" style="background:none;border:none;cursor:pointer;padding:2px;color:#5f6368;font-size:13px;line-height:1;">✎</button>
+             <button id="wanderlog-delete-start" type="button" aria-label="delete pin" title="delete pin" style="background:none;border:none;cursor:pointer;padding:2px;color:#c0392b;font-size:13px;line-height:1;">🗑</button>
+           </div>`
+
+    // Nearby restaurants (Session 30, moved here from the sidebar
+    // panel that got removed for being redundant with this popup) —
+    // nearbyEats/loadingEats already load automatically whenever
+    // selectedPin changes (see the effect above), this just renders
+    // what's already there.
+    const nearbyEatsHtml = `<div style="margin-top:8px;border-top:1px solid #e5e5e0;padding-top:8px;">
+        <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.02em;">nearby eats</p>
+        ${
+          loadingEats
+            ? '<p style="margin:0;font-size:13px;color:#6b6b66;">looking for restaurants…</p>'
+            : nearbyEats.length === 0
+              ? '<p style="margin:0;font-size:13px;color:#6b6b66;">no restaurants found nearby</p>'
+              : nearbyEats.map(eat => `<p style="margin:0 0 2px;font-size:13px;">${esc(eat.name)}</p>`).join('')
+        }
+      </div>`
 
     // Own container, own chrome — no InfoWindow bubble/tail/header
     // involved at all, so there's nothing reserved above the title
@@ -794,6 +838,7 @@ export default function MapView({ tripId }: Props) {
       ${rows.join('')}
       <p style="margin:8px 0 0;font-size:13px;"><a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">View in Google Maps</a></p>
       ${noteHtml}
+      ${nearbyEatsHtml}
     `
     const closeBtn = document.createElement('button')
     closeBtn.type = 'button'
@@ -814,6 +859,18 @@ export default function MapView({ tripId }: Props) {
     })
     el.querySelector('#wanderlog-name-edit')?.addEventListener('click', () => startPopupEditName(selectedPin))
     el.querySelector('#wanderlog-name-cancel')?.addEventListener('click', () => setPopupEditingPinId(null))
+    el.querySelector('#wanderlog-delete-start')?.addEventListener('click', () => setConfirmingDelete(true))
+    el.querySelector('#wanderlog-delete-no')?.addEventListener('click', () => setConfirmingDelete(false))
+    el.querySelector('#wanderlog-delete-yes')?.addEventListener('click', () => deleteSelectedPin())
+    el.querySelectorAll('.wanderlog-popup-category').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-key') as PinCategory | null
+        if (key) {
+          setPopupEditCategory(key)
+          setPopupEditIcon(undefined)
+        }
+      })
+    })
     el.querySelectorAll('.wanderlog-popup-icon').forEach(btn => {
       btn.addEventListener('click', () => {
         const key = btn.getAttribute('data-key')
@@ -837,7 +894,12 @@ export default function MapView({ tripId }: Props) {
     savingNote,
     popupEditingPinId,
     popupEditIcon,
-    savingPopupEdit
+    popupEditCategory,
+    savingPopupEdit,
+    confirmingDelete,
+    deletingPin,
+    nearbyEats,
+    loadingEats
   ])
 
   // Name/address/phone for the selected pin. Search-added pins carry a
@@ -986,37 +1048,6 @@ export default function MapView({ tripId }: Props) {
     }
     setSelectedPin(null)
     setConfirmingDelete(false)
-    loadPins()
-  }
-
-  function startEditName(pin: Pin) {
-    setConfirmingDelete(false)
-    setEditNameValue(pin.name)
-    setEditIconValue(pin.icon ?? undefined)
-    setEditingName(true)
-  }
-
-  // Renaming (and, for categories with icon variants, re-icon-ing)
-  // requires an UPDATE grant + RLS policy on pins — neither existed
-  // before this feature (pins previously only had select/insert, then
-  // delete as of migration 003). Same E5 "any trip member can edit"
-  // check as everywhere else, added via migration 004.
-  async function saveEditName() {
-    if (!selectedPin) return
-    const trimmed = editNameValue.trim()
-    if (!trimmed) return
-    setSavingName(true)
-    const { error } = await supabase
-      .from('pins')
-      .update({ name: trimmed, icon: editIconValue ?? null })
-      .eq('id', selectedPin.id)
-    setSavingName(false)
-    if (error) {
-      console.error('Failed to rename pin', error)
-      return
-    }
-    setSelectedPin({ ...selectedPin, name: trimmed, icon: editIconValue ?? null })
-    setEditingName(false)
     loadPins()
   }
 
@@ -1264,127 +1295,7 @@ export default function MapView({ tripId }: Props) {
           )}
 
           {!draftPin && !selectedPin && (
-            <p className={styles.hint}>search above, click the map, or select a pin to see nearby eats</p>
-          )}
-
-          {!draftPin && selectedPin && (
-            <>
-              <div className={styles.placeDetails}>
-                <div className={styles.placeNameRow}>
-                  {!editingName && (
-                    <>
-                      <p className={styles.placeName}>{selectedPin.name}</p>
-                      {!confirmingDelete && (
-                        <div className={styles.placeActions}>
-                          <button
-                            type="button"
-                            className={styles.iconButton}
-                            title="edit name"
-                            aria-label="edit name"
-                            onClick={() => startEditName(selectedPin)}
-                            dangerouslySetInnerHTML={{ __html: EDIT_ICON }}
-                          />
-                          <button
-                            type="button"
-                            className={`${styles.iconButton} ${styles.deleteIcon}`}
-                            title="delete pin"
-                            aria-label="delete pin"
-                            onClick={() => setConfirmingDelete(true)}
-                            dangerouslySetInnerHTML={{ __html: TRASH_ICON }}
-                          />
-                        </div>
-                      )}
-                      {confirmingDelete && (
-                        <div className={styles.deleteConfirm}>
-                          <span>delete?</span>
-                          <button
-                            type="button"
-                            className={styles.deleteConfirmYes}
-                            onClick={deleteSelectedPin}
-                            disabled={deletingPin}
-                          >
-                            {deletingPin ? '…' : 'yes'}
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.deleteConfirmNo}
-                            onClick={() => setConfirmingDelete(false)}
-                            disabled={deletingPin}
-                          >
-                            no
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {editingName && (
-                    <div className={styles.editNameForm}>
-                      <input
-                        className={styles.editNameInput}
-                        value={editNameValue}
-                        onChange={e => setEditNameValue(e.target.value)}
-                        autoFocus
-                      />
-                      <button
-                        type="button"
-                        className={styles.editNameSave}
-                        onClick={saveEditName}
-                        disabled={savingName || !editNameValue.trim()}
-                      >
-                        {savingName ? '…' : 'save'}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.editNameCancel}
-                        onClick={() => setEditingName(false)}
-                        disabled={savingName}
-                      >
-                        cancel
-                      </button>
-                    </div>
-                  )}
-                </div>
-                {editingName && ICON_VARIANTS[selectedPin.category] && (
-                  <IconPicker
-                    category={selectedPin.category}
-                    selected={editIconValue}
-                    onSelect={key => setEditIconValue(key)}
-                  />
-                )}
-                {loadingDetails && <p className={styles.hint}>looking up details…</p>}
-                {!loadingDetails && placeDetails?.address && (
-                  <p className={styles.placeAddress}>{placeDetails.address}</p>
-                )}
-                {!loadingDetails && placeDetails?.phone && (
-                  <p className={styles.placePhone}>{placeDetails.phone}</p>
-                )}
-                {!loadingDetails && placeDetails?.website && (
-                  <a
-                    className={styles.placePhone}
-                    href={placeDetails.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {placeDetails.website}
-                  </a>
-                )}
-                {!loadingDetails && !placeDetails && (
-                  <p className={styles.hint}>no additional details found</p>
-                )}
-              </div>
-
-              <p className={styles.sidebarTitle}>nearby eats</p>
-              {loadingEats && <p className={styles.hint}>looking for restaurants…</p>}
-              {!loadingEats && nearbyEats.length === 0 && (
-                <p className={styles.hint}>no restaurants found nearby</p>
-              )}
-              {nearbyEats.map((eat, i) => (
-                <div key={i} className={styles.eatRow}>
-                  <p className={styles.eatName}>{eat.name}</p>
-                </div>
-              ))}
-            </>
+            <p className={styles.hint}>search above or click the map to add a pin</p>
           )}
 
           {/* Always visible in this panel, regardless of the draft-pin
