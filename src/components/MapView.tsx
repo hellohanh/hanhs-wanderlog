@@ -25,7 +25,7 @@ import {
   HOUR_PX,
   SCROLL_TO_HOUR
 } from '../lib/itineraryLayout'
-import { TimelineZone } from './ItineraryTimeline'
+import { StopEditPopup, TimelineZone, type StopWithPin } from './ItineraryTimeline'
 import timelineStyles from './ItineraryTimeline.module.css'
 import type { Pin, ItineraryDay, ItineraryStop, TravelLeg } from '../types'
 import styles from './MapView.module.css'
@@ -217,11 +217,15 @@ export default function MapView({ tripId }: Props) {
   // Itinerary day-selector panel (Session 32) — separate from the
   // Itinerary tab's own day/stop state in ItineraryView.tsx; this is a
   // lighter, map-focused read of the same data (day tabs + a simple
-  // per-day stop list), used to filter/center the map, not to edit
-  // the itinerary itself. Editing still only happens on the Itinerary
-  // tab.
+  // per-day stop list), used to filter/center the map. Session 45:
+  // clicking a scheduled stop on this panel's timeline now opens the
+  // same time/notes editor as the Itinerary tab (StopEditPopup, shared
+  // via ItineraryTimeline.tsx) instead of only the map's pin popup, so
+  // this is no longer read-only.
   const [itineraryDays, setItineraryDays] = useState<ItineraryDay[]>([])
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
+  const [editingStop, setEditingStop] = useState<StopWithPin | null>(null)
+  const [savingStop, setSavingStop] = useState(false)
   // "show all pins" toggle (Session 34) — off by default, matching the
   // existing day-dimming behavior. When on, it bypasses ONLY the day
   // filter in isDimmed() below — the category/variant filter (E75)
@@ -323,8 +327,6 @@ export default function MapView({ tripId }: Props) {
   const [popupEditCategory, setPopupEditCategory] = useState<PinCategory | undefined>(undefined)
   const [savingPopupEdit, setSavingPopupEdit] = useState(false)
   const [draftPin, setDraftPin] = useState<DraftPin | null>(null)
-  const [nearbyEats, setNearbyEats] = useState<{ name: string; lat: number; lng: number }[]>([])
-  const [loadingEats, setLoadingEats] = useState(false)
   const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null)
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -543,6 +545,34 @@ export default function MapView({ tripId }: Props) {
       console.error('Failed to move stop', error)
       return
     }
+    if (selectedDayId) loadDayStops(selectedDayId)
+  }
+
+  // Session 45 — mirrors ItineraryView.tsx's removeStopFromDay/
+  // saveStopTimes exactly (same table, same columns), so the map
+  // panel's StopEditPopup behaves identically to the Itinerary tab's.
+  async function removeStopFromDay(stopId: string) {
+    const { error } = await supabase.from('itinerary_stops').delete().eq('id', stopId)
+    if (error) {
+      console.error('Failed to unschedule stop', error)
+      return
+    }
+    setEditingStop(null)
+    if (selectedDayId) loadDayStops(selectedDayId)
+  }
+
+  async function saveStopTimes(stopId: string, startTime: string, endTime: string, notes: string) {
+    setSavingStop(true)
+    const { error: stopError } = await supabase
+      .from('itinerary_stops')
+      .update({ start_time: startTime || null, end_time: endTime || null, notes: notes.trim() || null })
+      .eq('id', stopId)
+    setSavingStop(false)
+    if (stopError) {
+      console.error('Failed to update stop', stopError)
+      return
+    }
+    setEditingStop(null)
     if (selectedDayId) loadDayStops(selectedDayId)
   }
 
@@ -958,14 +988,6 @@ export default function MapView({ tripId }: Props) {
   }, [pins, mapReady, selectedFilters, selectedDayId, dayStops, showAllPins])
 
   useEffect(() => {
-    if (!selectedPin) {
-      setNearbyEats([])
-      return
-    }
-    loadNearbyEats(selectedPin)
-  }, [selectedPin])
-
-  useEffect(() => {
     setConfirmingDelete(false)
   }, [selectedPin])
 
@@ -1112,22 +1134,6 @@ export default function MapView({ tripId }: Props) {
              <button id="wanderlog-delete-start" type="button" aria-label="delete pin" title="delete pin" style="background:none;border:none;cursor:pointer;padding:2px;color:#c0392b;font-size:13px;line-height:1;">🗑</button>
            </div>`
 
-    // Nearby restaurants (Session 30, moved here from the sidebar
-    // panel that got removed for being redundant with this popup) —
-    // nearbyEats/loadingEats already load automatically whenever
-    // selectedPin changes (see the effect above), this just renders
-    // what's already there.
-    const nearbyEatsHtml = `<div style="margin-top:8px;border-top:1px solid #e5e5e0;padding-top:8px;">
-        <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.02em;">nearby eats</p>
-        ${
-          loadingEats
-            ? '<p style="margin:0;font-size:13px;color:#6b6b66;">looking for restaurants…</p>'
-            : nearbyEats.length === 0
-              ? '<p style="margin:0;font-size:13px;color:#6b6b66;">no restaurants found nearby</p>'
-              : nearbyEats.map(eat => `<p style="margin:0 0 2px;font-size:13px;">${esc(eat.name)}</p>`).join('')
-        }
-      </div>`
-
     // Own container, own chrome — no InfoWindow bubble/tail/header
     // involved at all, so there's nothing reserved above the title
     // and no native close button to steal keyboard focus.
@@ -1149,7 +1155,6 @@ export default function MapView({ tripId }: Props) {
       ${rows.join('')}
       <p style="margin:8px 0 0;font-size:13px;"><a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" style="color:#1a73e8;">View in Google Maps</a></p>
       ${noteHtml}
-      ${nearbyEatsHtml}
     `
     const closeBtn = document.createElement('button')
     closeBtn.type = 'button'
@@ -1208,9 +1213,7 @@ export default function MapView({ tripId }: Props) {
     popupEditCategory,
     savingPopupEdit,
     confirmingDelete,
-    deletingPin,
-    nearbyEats,
-    loadingEats
+    deletingPin
   ])
 
   // Name/address/phone for the selected pin. Search-added pins carry a
@@ -1360,43 +1363,6 @@ export default function MapView({ tripId }: Props) {
     setSelectedPin(null)
     setConfirmingDelete(false)
     loadPins()
-  }
-
-  // Uses Places API (New) — Nearby Search, per E26.
-  async function loadNearbyEats(pin: Pin) {
-    setLoadingEats(true)
-    try {
-      const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey,
-          'X-Goog-FieldMask': 'places.displayName,places.location'
-        },
-        body: JSON.stringify({
-          includedTypes: ['restaurant'],
-          maxResultCount: 8,
-          locationRestriction: {
-            circle: {
-              center: { latitude: pin.lat, longitude: pin.lng },
-              radius: 600
-            }
-          }
-        })
-      })
-      const data = await res.json()
-      const results = (data.places ?? []).map((p: any) => ({
-        name: p.displayName?.text ?? 'unnamed restaurant',
-        lat: p.location?.latitude,
-        lng: p.location?.longitude
-      }))
-      setNearbyEats(results)
-    } catch (err) {
-      console.error('Places nearby search failed', err)
-      setNearbyEats([])
-    } finally {
-      setLoadingEats(false)
-    }
   }
 
   // Session 24: used to auto-expand to full height the instant a pin
@@ -1619,7 +1585,7 @@ export default function MapView({ tripId }: Props) {
           )}
 
           {/* Always visible in this panel, regardless of the draft-pin
-              form or nearby-eats state above — a running list of every
+              form above — a running list of every
               pin on this trip, tap to select + pan/zoom the map to it.
               This title is also the mobile sheet's drag/tap handle
               (Session 24) — it's the one thing that's always visible
@@ -1771,7 +1737,7 @@ export default function MapView({ tripId }: Props) {
               timedLegs={timedLegs}
               continuationLegs={continuationLegs}
               legColumnLayout={legColumnLayout}
-              onStopClick={stop => selectPin(stop.pin)}
+              onStopClick={setEditingStop}
               onLegClick={() => {}}
               gutter={40}
               uncapped
@@ -1796,6 +1762,16 @@ export default function MapView({ tripId }: Props) {
           </div>
         )}
       </DragOverlay>
+
+      {editingStop && (
+        <StopEditPopup
+          stop={editingStop}
+          saving={savingStop}
+          onSave={saveStopTimes}
+          onRemove={removeStopFromDay}
+          onClose={() => setEditingStop(null)}
+        />
+      )}
       </DndContext>
     </div>
   )

@@ -555,3 +555,112 @@ export function TimelineZone({
     </div>
   )
 }
+
+// ---- Stop time/notes editing (Session 45) ----
+// Extracted from ItineraryView.tsx (same as TimelineZone et al. above)
+// so the map panel's timeline can open the exact same time+notes editor
+// as the Itinerary tab, instead of the map's own pin popup. Both
+// consumers still own their own Supabase writes (saveStopTimes /
+// removeStopFromDay) and just pass them in as props — this file stays
+// presentation-only, consistent with the rest of it.
+
+const TIME_SELECT_HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const TIME_SELECT_MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+
+// Native <input type="time"> follows OS/browser locale for its picker
+// UI — the lang="en-GB" trick to force 24-hour is unreliable in
+// practice (doesn't hold on every browser), so this is a plain pair of
+// HH/MM <select>s instead: always renders 24-hour, everywhere, no
+// locale dependency. value/onChange work with the same "HH:MM" string
+// (or "") used throughout — a real <input type="time">'s value shape.
+export function TimeSelect24({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [h, m] = value ? value.split(':') : ['', '']
+
+  return (
+    <div className={styles.timeSelectGroup}>
+      <select
+        className={styles.timeSelectPart}
+        value={h}
+        onChange={e => onChange(e.target.value ? `${e.target.value}:${m || '00'}` : '')}
+      >
+        <option value="">--</option>
+        {TIME_SELECT_HOURS.map(hh => (
+          <option key={hh} value={hh}>
+            {hh}
+          </option>
+        ))}
+      </select>
+      <span className={styles.timeSelectColon}>:</span>
+      <select
+        className={styles.timeSelectPart}
+        value={m}
+        onChange={e => onChange(e.target.value ? `${h || '00'}:${e.target.value}` : '')}
+      >
+        <option value="">--</option>
+        {TIME_SELECT_MINUTES.map(mm => (
+          <option key={mm} value={mm}>
+            {mm}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+export function StopEditPopup({
+  stop,
+  saving,
+  onSave,
+  onRemove,
+  onClose
+}: {
+  stop: StopWithPin
+  saving: boolean
+  onSave: (stopId: string, startTime: string, endTime: string, notes: string) => void
+  onRemove: (stopId: string) => void
+  onClose: () => void
+}) {
+  const [start, setStart] = useState(stop.start_time ?? '')
+  const [end, setEnd] = useState(stop.end_time ?? '')
+  const [notes, setNotes] = useState(stop.notes ?? '')
+  const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
+
+  return (
+    <div className={styles.popupBackdrop} onClick={onClose}>
+      <div className={styles.popupCard} onClick={e => e.stopPropagation()}>
+        <div className={styles.stopEditHeader}>
+          <span className={styles.stopEditDot} style={{ backgroundColor: badgeColor }} />
+          <p className={styles.stopEditName}>{stop.pin.name}</p>
+        </div>
+        <div className={styles.travelFormRow}>
+          <TimeSelect24 value={start} onChange={setStart} />
+          <span className={styles.timeSep}>–</span>
+          <TimeSelect24 value={end} onChange={setEnd} />
+        </div>
+        <textarea
+          className={styles.noteTextarea}
+          placeholder="e.g. Go up to the upper deck of the adjacent tower to look down at the crossing"
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          rows={3}
+        />
+        <div className={styles.travelFormActions}>
+          <button
+            type="button"
+            className={styles.travelFormSave}
+            onClick={() => onSave(stop.id, start, end, notes)}
+            disabled={saving}
+          >
+            {saving ? '…' : 'save'}
+          </button>
+          <button type="button" className={styles.travelFormCancel} onClick={onClose} disabled={saving}>
+            cancel
+          </button>
+          <button type="button" className={styles.travelFormDelete} onClick={() => onRemove(stop.id)} disabled={saving}>
+            remove
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

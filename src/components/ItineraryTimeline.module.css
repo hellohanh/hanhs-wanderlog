@@ -503,3 +503,147 @@
 .blockHoverPopupLine:last-child {
   margin-bottom: 0;
 }
+
+/* ---- Stop edit popup (Session 45) ----
+   Duplicated from ItineraryView.module.css's popup/travelForm rules
+   rather than moved, since ItineraryView.tsx's TravelLegForm and its
+   other popupBackdrop uses (day-delete confirm, mini-map) still rely
+   on those originals staying put. Keeping the same class names here
+   means StopEditPopup/TimeSelect24 (moved to ItineraryTimeline.tsx so
+   the map panel can use them too) don't need any prop-driven styling
+   — same look on both tabs, one definition each side just needs to
+   exist. */
+
+.popupBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+
+.popupCard {
+  background: var(--surface-1);
+  border-radius: 12px;
+  padding: 16px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.stopEditHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.stopEditDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stopEditName {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.timeSep {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.travelFormRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.noteTextarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 10px;
+}
+
+.timeSelectGroup {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.timeSelectPart {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 7px 4px;
+  font-size: 13px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+.timeSelectColon {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.travelFormActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+.travelFormSave {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-text-on-fill);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.travelFormSave:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.travelFormCancel {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.travelFormDelete {
+  border: 1px solid #C0392B;
+  background: none;
+  color: #C0392B;
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .timeSelectPart {
+    font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
+  }
+
+  .travelFormRow {
+    flex-wrap: wrap;
+  }
+}
