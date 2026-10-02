@@ -226,12 +226,14 @@ export default function MapView({ tripId }: Props) {
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
   const [editingStop, setEditingStop] = useState<StopWithPin | null>(null)
   const [savingStop, setSavingStop] = useState(false)
-  // "show all pins" toggle (Session 34) — off by default, matching the
-  // existing day-dimming behavior. When on, it bypasses ONLY the day
-  // filter in isDimmed() below — the category/variant filter (E75)
-  // stays fully independent either way, so toggling this on doesn't
-  // change what clicking a category label on the left does.
-  const [showAllPins, setShowAllPins] = useState(false)
+  // "show all pins" toggle (Session 34; default flipped Session 46) —
+  // ON by default now, so every pin starts at full opacity for every
+  // day, not just the selected day's. When on, it bypasses ONLY the
+  // day filter in isDimmed() below — the category/variant filter (E75)
+  // stays fully independent either way, so toggling this off (to go
+  // back to day-dimming) doesn't change what clicking a category label
+  // on the left does, and toggling it on/off never touches selectedDayId.
+  const [showAllPins, setShowAllPins] = useState(true)
   // Session 38 — after THREE CSS-only attempts at the same high-zoom
   // clipping bug (E87 min-height floor, E88 flex min-height:0, E89
   // vh->dvh) all failed to actually fix it for the user, stopped
