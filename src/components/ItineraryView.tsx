@@ -18,6 +18,7 @@ import {
   DEFAULT_DURATION_MIN,
   HOUR_PX,
   LEG_MODE_CONFIG,
+  MIN_LEG_CARD_PX,
   SCROLL_TO_HOUR,
   SNAP_MIN,
   computeColumnLayout,
@@ -901,25 +902,30 @@ export default function ItineraryView({ tripId, trip }: Props) {
   // and continuation blocks together, since a continuation block can
   // overlap a same-day departure just as easily as two normal legs
   // can overlap each other.
-  const legColumnLayout = useMemo(() => {
+  // Session 48: legs AND stops share ONE column layout. They used to be
+  // laid out separately, so a flight card (positioned by local clock
+  // reading, which can land on top of a stop after a timezone change)
+  // simply painted over any stop at the same time of day. Now anything
+  // that overlaps — leg or stop — splits into side-by-side columns.
+  // Leg heights use the same minimum-height clamp the cards render with,
+  // so the layout matches what's actually drawn. ids are unique uuids,
+  // so one Map serves both props.
+  const blockColumnLayout = useMemo(() => {
     const items = [
-      ...continuationLegs.map(l => ({ id: l.id, ...continuationBlockGeometry(l) })),
-      ...timedLegs.map(l => ({ id: l.id, ...legBlockGeometry(l) }))
+      ...continuationLegs.map(l => {
+        const g = continuationBlockGeometry(l)
+        return { id: l.id, top: g.top, height: Math.max(g.height, MIN_LEG_CARD_PX + 30) }
+      }),
+      ...timedLegs.map(l => {
+        const g = legBlockGeometry(l)
+        return { id: l.id, top: g.top, height: Math.max(g.height, MIN_LEG_CARD_PX) }
+      }),
+      ...timedStops.map(s => ({ id: s.id, ...stopBlockGeometry(s) }))
     ]
     return computeColumnLayout(items)
-  }, [continuationLegs, timedLegs])
-
-  // Same idea for overlapping pin stops (e.g. Shibuya Crossing and a
-  // rooftop bar scheduled at the same time) — a separate layout from
-  // legs above, since stops and legs are visually distinct block types
-  // that wouldn't normally coincide in a well-planned itinerary; no
-  // hard cap on how many columns (the user's "up to 3" was the example
-  // given, not a limit to enforce — the algorithm splits however many
-  // genuinely overlap, the same way it already does for legs).
-  const stopColumnLayout = useMemo(
-    () => computeColumnLayout(timedStops.map(s => ({ id: s.id, ...stopBlockGeometry(s) }))),
-    [timedStops]
-  )
+  }, [continuationLegs, timedLegs, timedStops])
+  const legColumnLayout = blockColumnLayout
+  const stopColumnLayout = blockColumnLayout
 
   const activePin = activeDragId?.startsWith('pool-') ? pins.find(p => p.id === activeDragId.slice(5)) : undefined
   const activeStop = activeDragId?.startsWith('tstop-')

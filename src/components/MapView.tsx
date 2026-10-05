@@ -24,6 +24,7 @@ import {
   timeToMinutes,
   DEFAULT_DURATION_MIN,
   HOUR_PX,
+  MIN_LEG_CARD_PX,
   SCROLL_TO_HOUR
 } from '../lib/itineraryLayout'
 import { StopEditPopup, TimelineZone, type StopWithPin } from './ItineraryTimeline'
@@ -489,17 +490,30 @@ export default function MapView({ tripId }: Props) {
     () => [...dayTravelLegs].filter(l => l.from_time != null).sort((a, b) => (timeToMinutes(a.from_time) ?? 0) - (timeToMinutes(b.from_time) ?? 0)),
     [dayTravelLegs]
   )
-  const legColumnLayout = useMemo(() => {
+  // Session 48: legs AND stops share ONE column layout. They used to be
+  // laid out separately, so a flight card (positioned by local clock
+  // reading, which can land on top of a stop after a timezone change)
+  // simply painted over any stop at the same time of day. Now anything
+  // that overlaps — leg or stop — splits into side-by-side columns.
+  // Leg heights use the same minimum-height clamp the cards render with,
+  // so the layout matches what's actually drawn. ids are unique uuids,
+  // so one Map serves both props.
+  const blockColumnLayout = useMemo(() => {
     const items = [
-      ...continuationLegs.map(l => ({ id: l.id, ...continuationBlockGeometry(l) })),
-      ...timedLegs.map(l => ({ id: l.id, ...legBlockGeometry(l) }))
+      ...continuationLegs.map(l => {
+        const g = continuationBlockGeometry(l)
+        return { id: l.id, top: g.top, height: Math.max(g.height, MIN_LEG_CARD_PX + 30) }
+      }),
+      ...timedLegs.map(l => {
+        const g = legBlockGeometry(l)
+        return { id: l.id, top: g.top, height: Math.max(g.height, MIN_LEG_CARD_PX) }
+      }),
+      ...timedStops.map(s => ({ id: s.id, ...stopBlockGeometry(s) }))
     ]
     return computeColumnLayout(items)
-  }, [continuationLegs, timedLegs])
-  const stopColumnLayout = useMemo(
-    () => computeColumnLayout(timedStops.map(s => ({ id: s.id, ...stopBlockGeometry(s) }))),
-    [timedStops]
-  )
+  }, [continuationLegs, timedLegs, timedStops])
+  const legColumnLayout = blockColumnLayout
+  const stopColumnLayout = blockColumnLayout
 
   function nextDefaultStartMinutes(): number {
     const ends = dayStops
