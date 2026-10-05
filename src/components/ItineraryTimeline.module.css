@@ -274,6 +274,51 @@
   gap: 6px;
 }
 
+/* Resize handles (Session 48) — thin grab strips flush with the
+   block's own top/bottom edge, inside its padding so .timelineBlock's
+   overflow: hidden never clips them. Hidden until the block is
+   hovered or actively being resized, same show-on-hover pattern as
+   the rest of the app's inline controls. */
+.resizeHandle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 2;
+}
+
+.resizeHandleTop {
+  top: 0;
+}
+
+.resizeHandleBottom {
+  bottom: 0;
+}
+
+.resizeHandleGrip {
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.timelineBlock:hover .resizeHandle,
+.timelineBlockResizing .resizeHandle {
+  opacity: 1;
+}
+
+.timelineBlockResizing {
+  cursor: default;
+}
+
 .timelineBlockNote {
   margin: 0;
   font-size: 11px;

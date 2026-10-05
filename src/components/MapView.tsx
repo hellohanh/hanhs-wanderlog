@@ -16,6 +16,7 @@ import { CATEGORIES, ICON_VARIANTS, categoryConfig, groupPinsByCategory, pinBadg
 import {
   computeColumnLayout,
   continuationBlockGeometry,
+  formatDayDate,
   legBlockGeometry,
   minutesToTime,
   snapMinutes,
@@ -549,6 +550,21 @@ export default function MapView({ tripId }: Props) {
       .eq('id', stopId)
     if (error) {
       console.error('Failed to move stop', error)
+      return
+    }
+    if (selectedDayId) loadDayStops(selectedDayId)
+  }
+
+  // Session 48 — mirrors ItineraryView.tsx's resizeStop exactly (same
+  // table/columns); the resize handle already hands back final,
+  // 5-minute-snapped start/end minutes, so this just writes them.
+  async function resizeStop(stopId: string, newStartMin: number, newEndMin: number) {
+    const { error } = await supabase
+      .from('itinerary_stops')
+      .update({ start_time: minutesToTime(newStartMin), end_time: minutesToTime(newEndMin) })
+      .eq('id', stopId)
+    if (error) {
+      console.error('Failed to resize stop', error)
       return
     }
     if (selectedDayId) loadDayStops(selectedDayId)
@@ -1724,7 +1740,10 @@ export default function MapView({ tripId }: Props) {
                 data-active={selectedDayId === day.id}
                 onClick={() => setSelectedDayId(day.id)}
               >
-                day {day.day_number}
+                <span className={styles.dayTabLabel}>day {day.day_number}</span>
+                {/* Session 48: small date subtitle, same formatDayDate
+                    already used for the Itinerary tab's day tabs. */}
+                {day.date && <span className={styles.dayTabSubdate}>{formatDayDate(day.date)}</span>}
               </button>
             ))}
             {itineraryDays.length === 0 && <p className={styles.hint}>no itinerary days yet</p>}
@@ -1745,6 +1764,7 @@ export default function MapView({ tripId }: Props) {
               legColumnLayout={legColumnLayout}
               onStopClick={setEditingStop}
               onLegClick={() => {}}
+              onStopResize={resizeStop}
               gutter={40}
               uncapped
             />

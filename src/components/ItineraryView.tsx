@@ -651,6 +651,22 @@ export default function ItineraryView({ tripId, trip }: Props) {
     if (selectedDayId) loadStops(selectedDayId)
   }
 
+  // Session 48: a resize handle already hands back final, snapped
+  // start/end minutes (RESIZE_SNAP_MIN in TimelineStopBlock) — unlike
+  // moveStopToTime, there's no duration to preserve, since the whole
+  // point of a resize is changing the duration.
+  async function resizeStop(stopId: string, newStartMin: number, newEndMin: number) {
+    const { error } = await supabase
+      .from('itinerary_stops')
+      .update({ start_time: minutesToTime(newStartMin), end_time: minutesToTime(newEndMin) })
+      .eq('id', stopId)
+    if (error) {
+      console.error('Failed to resize stop', error)
+      return
+    }
+    if (selectedDayId) loadStops(selectedDayId)
+  }
+
   async function removeStopFromDay(stopId: string) {
     const { error } = await supabase.from('itinerary_stops').delete().eq('id', stopId)
     if (error) {
@@ -1020,6 +1036,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
               legColumnLayout={legColumnLayout}
               onStopClick={setEditingStop}
               onLegClick={startEditLeg}
+              onStopResize={resizeStop}
             />
 
             <div className={styles.poolColumn}>

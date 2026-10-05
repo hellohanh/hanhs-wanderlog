@@ -10,9 +10,13 @@
 }
 
 .dayTabs {
+  /* Session 48: wraps onto multiple lines instead of scrolling
+     horizontally (same flex-wrap approach MapView.module.css's own
+     .dayTabs already uses) — a trip with many days no longer needs
+     left/right scrolling to find a day. */
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  overflow-x: auto;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
 }

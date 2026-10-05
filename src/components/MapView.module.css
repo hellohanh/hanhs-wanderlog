@@ -330,7 +330,11 @@
 
 .dayTab {
   flex-shrink: 0;
-  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 10px 5px;
   border-radius: 12px;
   border: 1px solid var(--border-strong);
   background: #fff;
@@ -344,6 +348,19 @@
   background: var(--accent-tint);
   color: var(--accent-text-on-light);
   font-weight: 500;
+}
+
+.dayTabLabel {
+  line-height: 1.2;
+}
+
+/* Session 48: small date subtitle under each day pill, so the map
+   page's day tabs carry the same date info the Itinerary tab's do
+   (as " · Dec 19") without widening these already-compact pills. */
+.dayTabSubdate {
+  font-size: 10px;
+  line-height: 1.2;
+  opacity: 0.75;
 }
 
 .showAllPinsToggle {

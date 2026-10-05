@@ -22,11 +22,17 @@ import {
   legDurationParts,
   minutesToLabel,
   stopBlockGeometry,
+  timeToMinutes,
   timezoneAbbreviation,
+  DAY_MINUTES,
+  DEFAULT_DURATION_MIN,
   HOUR_PX,
   LEG_DIVIDER_ICONS,
   LEG_MODE_CONFIG,
+  MIN_BLOCK_PX,
   MIN_LEG_CARD_PX,
+  MIN_STOP_DURATION_MIN,
+  RESIZE_SNAP_MIN,
   EDIT_ICON,
   type ColumnLayout
 } from '../lib/itineraryLayout'
@@ -314,21 +320,114 @@ export function PoolChip({ pin, onQuickAdd }: { pin: Pin; onQuickAdd: (pinId: st
   )
 }
 
+// Local geometry preview used while a resize handle is being dragged —
+// mirrors stopBlockGeometry()'s math but works off live start/end
+// minutes rather than the stop's saved start_time/end_time, so the
+// block can redraw every pointermove without a round-trip to Supabase.
+function geometryFromMinutes(startMin: number, endMin: number): { top: number; height: number } {
+  return { top: (startMin / 60) * HOUR_PX, height: Math.max(MIN_BLOCK_PX, ((endMin - startMin) / 60) * HOUR_PX) }
+}
+
+function minutesToClock(m: number): string {
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
+
 export function TimelineStopBlock({
   stop,
   onClick,
   layout,
-  gutter
+  gutter,
+  onResize
 }: {
   stop: StopWithPin
   onClick: () => void
   layout?: ColumnLayout
   gutter?: number
+  // Session 48: top/bottom drag handles to change a scheduled stop's
+  // duration. Resizing is plain pointer-event dragging, NOT a second
+  // dnd-kit draggable — it lives entirely inside this component (drag
+  // state, live preview, snap-to-5-min) and only calls back out once,
+  // on release, with the final minutes-of-day. Keeping it off dnd-kit
+  // sidesteps any collision/overId interaction with the block's own
+  // reposition-drag (useDraggable below) and with TimelineZone's
+  // droppable — this never needs to be "dropped on" anything.
+  onResize?: (stopId: string, startMin: number, endMin: number) => void
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `tstop-${stop.id}` })
   const badgeColor = pinBadgeColor(stop.pin.category, stop.pin.icon)
-  const { top, height } = stopBlockGeometry(stop)
   const hover = useBlockHoverPopup<HTMLDivElement>()
+
+  // While a handle is being dragged, this holds the live (unsaved)
+  // start/end minutes; null the rest of the time, when geometry and
+  // the displayed time both come straight from the stop prop.
+  const [resizePreview, setResizePreview] = useState<{ startMin: number; endMin: number } | null>(null)
+  const [resizingEdge, setResizingEdge] = useState<'top' | 'bottom' | null>(null)
+  // A click fires right after a handle's pointerup (same browser
+  // behavior that makes a drag-then-release register as a click on
+  // whatever's under the pointer) — this ref swallows exactly that one
+  // click so letting go of a handle doesn't also pop open the stop
+  // editor, without touching the block's normal click-to-edit at any
+  // other time.
+  const suppressNextClickRef = useRef(false)
+
+  const savedStart = timeToMinutes(stop.start_time) ?? 0
+  const savedEnd = timeToMinutes(stop.end_time) ?? savedStart + DEFAULT_DURATION_MIN
+  const { startMin, endMin } = resizePreview ?? { startMin: savedStart, endMin: savedEnd }
+  const { top, height } = resizePreview ? geometryFromMinutes(startMin, endMin) : stopBlockGeometry(stop)
+
+  function beginResize(edge: 'top' | 'bottom') {
+    return (e: React.PointerEvent) => {
+      // Stop this from ever reaching the block's own {...listeners} —
+      // without this, dnd-kit's PointerSensor would see the same
+      // pointerdown and start a whole-block reposition-drag at the
+      // same time as the resize.
+      e.preventDefault()
+      e.stopPropagation()
+      const origStart = savedStart
+      const origEnd = savedEnd
+      const startY = e.clientY
+      setResizingEdge(edge)
+      setResizePreview({ startMin: origStart, endMin: origEnd })
+      suppressNextClickRef.current = true
+
+      function onMove(ev: PointerEvent) {
+        const rawDeltaMin = ((ev.clientY - startY) / HOUR_PX) * 60
+        const deltaMin = Math.round(rawDeltaMin / RESIZE_SNAP_MIN) * RESIZE_SNAP_MIN
+        if (edge === 'top') {
+          const newStart = Math.min(origEnd - MIN_STOP_DURATION_MIN, Math.max(0, origStart + deltaMin))
+          setResizePreview({ startMin: newStart, endMin: origEnd })
+        } else {
+          const newEnd = Math.max(origStart + MIN_STOP_DURATION_MIN, Math.min(DAY_MINUTES - 1, origEnd + deltaMin))
+          setResizePreview({ startMin: origStart, endMin: newEnd })
+        }
+      }
+      function onUp() {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        setResizingEdge(null)
+        setResizePreview(current => {
+          if (current && onResize && (current.startMin !== origStart || current.endMin !== origEnd)) {
+            onResize(stop.id, current.startMin, current.endMin)
+          }
+          return null
+        })
+        // Let the click that follows pointerup fire and get swallowed
+        // before clearing the flag, rather than clearing it inline.
+        setTimeout(() => {
+          suppressNextClickRef.current = false
+        }, 0)
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    }
+  }
+
+  function handleClick() {
+    if (suppressNextClickRef.current) return
+    onClick()
+  }
 
   return (
     <div
@@ -336,30 +435,40 @@ export function TimelineStopBlock({
         setNodeRef(node)
         ;(hover.ref as React.MutableRefObject<HTMLDivElement | null>).current = node
       }}
-      className={styles.timelineBlock}
+      className={`${styles.timelineBlock} ${resizingEdge ? styles.timelineBlockResizing : ''}`}
       style={{ top, height, backgroundColor: badgeColor, opacity: isDragging ? 0.4 : 1, ...blockPositionStyle(layout, gutter) }}
-      onClick={onClick}
+      onClick={handleClick}
       onMouseEnter={hover.handleMouseEnter}
       onMouseLeave={hover.handleMouseLeave}
       {...listeners}
       {...attributes}
     >
+      {onResize && (
+        <div className={`${styles.resizeHandle} ${styles.resizeHandleTop}`} onPointerDown={beginResize('top')}>
+          <span className={styles.resizeHandleGrip} />
+        </div>
+      )}
       <div className={styles.timelineBlockHeader}>
         <span className={styles.timelineBlockName}>{stop.pin.name}</span>
         <span className={styles.timelineBlockTime}>
-          {stop.start_time?.slice(0, 5)}
-          {stop.end_time ? `–${stop.end_time.slice(0, 5)}` : ''}
+          {minutesToClock(startMin)}
+          {`–${minutesToClock(endMin)}`}
         </span>
       </div>
       {/* stop.notes: a note about this specific VISIT (itinerary_stops.notes,
           migration 012) — not the pin, so the same place scheduled on two
           different days can carry two different notes. */}
       {stop.notes && <p className={styles.timelineBlockNote}>{stop.notes}</p>}
+      {onResize && (
+        <div className={`${styles.resizeHandle} ${styles.resizeHandleBottom}`} onPointerDown={beginResize('bottom')}>
+          <span className={styles.resizeHandleGrip} />
+        </div>
+      )}
       <HoverPopupPortal style={hover.style}>
         <p className={styles.blockHoverPopupTitle}>{stop.pin.name}</p>
         <p className={styles.blockHoverPopupLine}>
-          {stop.start_time?.slice(0, 5)}
-          {stop.end_time ? `–${stop.end_time.slice(0, 5)}` : ''}
+          {minutesToClock(startMin)}
+          {`–${minutesToClock(endMin)}`}
         </p>
         {stop.notes && <p className={styles.blockHoverPopupLine}>{stop.notes}</p>}
       </HoverPopupPortal>
@@ -469,6 +578,10 @@ export interface TimelineZoneProps {
   legColumnLayout: Map<string, ColumnLayout>
   onStopClick: (stop: StopWithPin) => void
   onLegClick: (leg: TravelLeg) => void
+  // Session 48: top/bottom resize handles on each stop block. Optional
+  // so a consumer that hasn't wired up persistence yet just doesn't
+  // get handles, rather than crashing.
+  onStopResize?: (stopId: string, startMin: number, endMin: number) => void
   // Narrower hosts (the 300px map-page panel) pass a smaller gutter
   // than the full Itinerary tab's default 60px hour-label column.
   gutter?: number
@@ -485,6 +598,7 @@ export function TimelineZone({
   legColumnLayout,
   onStopClick,
   onLegClick,
+  onStopResize,
   scrollRef,
   gutter,
   className,
@@ -529,6 +643,7 @@ export function TimelineZone({
               onClick={() => onStopClick(stop)}
               layout={stopColumnLayout.get(stop.id)}
               gutter={gutter}
+              onResize={onStopResize}
             />
           ))}
 

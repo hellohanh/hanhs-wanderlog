@@ -11,6 +11,13 @@ export const HOUR_PX = 60
 export const SNAP_MIN = 15
 export const DEFAULT_DURATION_MIN = 60
 export const MIN_BLOCK_PX = 22
+// Resize-handle dragging (Session 48) snaps finer than a whole-stop
+// reposition drag (SNAP_MIN, 15 min) — confirmed with the user. A
+// resized stop can never be shrunk smaller than MIN_STOP_DURATION_MIN,
+// which matches SNAP_MIN so a resize can't produce a duration a normal
+// reposition-drag could never have created in the first place.
+export const RESIZE_SNAP_MIN = 5
+export const MIN_STOP_DURATION_MIN = 15
 // SCROLL_TO_HOUR is the top of the default visible window; paired with
 // .timelineScroll's max-height (18 hours' worth, 1080px) in the CSS,
 // this makes the default view exactly 06:00-00:00 (midnight) — change
@@ -249,15 +256,23 @@ export function computeColumnLayout(items: { id: string; top: number; height: nu
     cluster = []
   }
 
+  // Session 48: round to 1/100 px before comparing. top/height come from
+  // (minutes / 60) * HOUR_PX, which isn't exact in floating point — e.g.
+  // 16:35 gives top = 994.9999999999999, so a block ending exactly at
+  // 16:35 (end = 995) looked like it overlapped a block starting at
+  // 16:35 by a hair, and both got split into side-by-side columns.
+  const r = (n: number) => Math.round(n * 100) / 100
+
   for (const item of sorted) {
-    const end = item.top + item.height
-    if (item.top >= clusterEnd) {
+    const top = r(item.top)
+    const end = r(item.top + item.height)
+    if (top >= clusterEnd) {
       flushCluster()
       clusterEnd = end
     } else {
       clusterEnd = Math.max(clusterEnd, end)
     }
-    cluster.push({ id: item.id, top: item.top, end })
+    cluster.push({ id: item.id, top, end })
   }
   flushCluster()
 
