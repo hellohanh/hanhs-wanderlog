@@ -268,7 +268,7 @@ export function PoolZone({ pins, onQuickAdd }: { pins: Pin[]; onQuickAdd: (pinId
     <div className={styles.poolSection}>
       <p className={styles.poolLabel}>pinned · drag onto the timeline, or tap +</p>
       <div ref={setNodeRef} className={styles.poolGroups}>
-        {pins.length === 0 && <p className={styles.hint}>everything's scheduled, or no pins yet.</p>}
+        {pins.length === 0 && <p className={styles.hint}>no pins yet — add one from the map first.</p>}
         {groups.map(group => (
           <div key={group.key} className={styles.poolGroup}>
             <p className={styles.poolGroupLabel}>{group.label}</p>

@@ -608,9 +608,13 @@ export default function ItineraryView({ tripId, trip }: Props) {
     return snapMinutes(Math.min(DAY_MINUTES - DEFAULT_DURATION_MIN, Math.max(...ends)))
   }
 
+  // Session 47: deliberately no "already scheduled this day" guard here
+  // — a pin can legitimately need two separate stops on the same day
+  // (e.g. drop bags off at a locker in the morning, come back for them
+  // in the evening). Each call always inserts a NEW itinerary_stops row;
+  // nothing in the schema or here treats (day, pin) as unique.
   async function addStopToDayAtTime(pinId: string, startMin: number) {
     if (!selectedDayId) return
-    if (stops.some(s => s.pin_id === pinId)) return
     const start = snapMinutes(startMin)
     const end = Math.min(DAY_MINUTES - 1, start + DEFAULT_DURATION_MIN)
     const { error } = await supabase.from('itinerary_stops').insert({
@@ -824,8 +828,13 @@ export default function ItineraryView({ tripId, trip }: Props) {
     }
   }
 
-  const scheduledPinIds = useMemo(() => new Set(stops.map(s => s.pin_id)), [stops])
-  const unscheduledPins = useMemo(() => pins.filter(p => !scheduledPinIds.has(p.id)), [pins, scheduledPinIds])
+  // Session 47: the pool used to filter OUT any pin already scheduled
+  // on the selected day (scheduledPinIds/unscheduledPins) — removed,
+  // since that made it impossible to drag a pin onto the timeline a
+  // second time (e.g. a bag-drop stop in the morning, a bag-pickup stop
+  // in the evening, same location). The pool now always shows every
+  // trip pin, matching the map panel's sidebar, which never filtered by
+  // scheduled status in the first place.
   const timedStops = useMemo(
     () =>
       [...stops]
@@ -1015,7 +1024,7 @@ export default function ItineraryView({ tripId, trip }: Props) {
 
             <div className={styles.poolColumn}>
               <PoolZone
-                pins={unscheduledPins}
+                pins={pins}
                 onQuickAdd={pinId => addStopToDayAtTime(pinId, nextDefaultStartMinutes())}
               />
             </div>

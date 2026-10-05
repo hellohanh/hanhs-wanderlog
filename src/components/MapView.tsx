@@ -512,9 +512,13 @@ export default function MapView({ tripId }: Props) {
     return snapMinutes(Math.min(24 * 60 - DEFAULT_DURATION_MIN, Math.max(...ends)))
   }
 
+  // Session 47: deliberately no "already scheduled this day" guard here
+  // — a pin can legitimately need two separate stops on the same day
+  // (e.g. drop bags off at a locker in the morning, come back for them
+  // in the evening). Each call always inserts a NEW itinerary_stops row;
+  // nothing in the schema or here treats (day, pin) as unique.
   async function addStopToDayAtTime(pinId: string, startMin: number) {
     if (!selectedDayId) return
-    if (dayStops.some(s => s.pin_id === pinId)) return
     const start = snapMinutes(startMin)
     const end = Math.min(24 * 60 - 1, start + DEFAULT_DURATION_MIN)
     const { error } = await supabase.from('itinerary_stops').insert({
