@@ -975,7 +975,7 @@ export default function MapView({ tripId }: Props) {
       const el = document.createElement('div')
       el.className = styles.pinMarker
       el.title = `${cfg.label}: ${pin.name}`
-      if (isDimmed(pin)) el.style.opacity = '0.25'
+      if (isDimmed(pin)) el.style.opacity = '0.1'
       el.innerHTML = `
         <span class="${styles.pinOuter}">
           <span class="${styles.pinInner}" style="background:${badgeColor}">
